@@ -146,6 +146,10 @@ class Joiner:
 
 
 async def _until(deadline: float, aw: Awaitable[T]) -> T:
+    if time.monotonic() >= deadline:
+        if isinstance(aw, Coroutine):
+            aw.close()
+        raise request_timeout()
     try:
         async with asyncio.timeout(deadline - time.monotonic()):
             return await aw
@@ -157,20 +161,47 @@ async def run_chunks(lane: Lane, wav: np.ndarray, spans: Sequence[Span], deadlin
                      window: int) -> AsyncIterator[str]:
     """Yield chunk texts in audio order; at most `window` jobs in flight.
 
-    The next chunk is submitted before waiting for the oldest, so the worker never waits on the consumer, and a
-    long file is never enqueued at once. Each wait is bounded by the request deadline (no timeout spans a yield).
+    Admission runs alongside result delivery: a full queue must not delay an already-finished chunk. The
+    pending submission counts toward the window. Each wait is deadline-bound (no timeout spans a yield).
     """
     todo = deque(spans)
     jobs = deque()
+    admission = None
+
+    def submit_next():
+        s = todo.popleft()
+        return asyncio.create_task(_until(deadline, lane.submit(wav[s.start:s.end], deadline)))
+
     try:
-        while todo or jobs:
-            while todo and len(jobs) < window:
-                s = todo.popleft()
-                jobs.append(await _until(deadline, lane.submit(wav[s.start:s.end], deadline)))
-            yield await _until(deadline, jobs.popleft())
+        while todo or jobs or admission is not None:
+            if admission is None and todo and len(jobs) < window:
+                admission = submit_next()
+            if jobs and jobs[0].future.done():
+                text = await _until(deadline, jobs.popleft())
+                if admission is None and todo:
+                    admission = submit_next()
+                yield text
+                continue
+            if admission is not None and admission.done():
+                jobs.append(admission.result())
+                admission = None
+                continue
+            waiters = ([admission] if admission is not None else [])
+            if jobs:
+                waiters.append(jobs[0].future)
+            await _until(deadline, asyncio.wait(waiters, return_when=asyncio.FIRST_COMPLETED))
     finally:
+        if admission is not None:
+            admission.cancel()
+            try:
+                job = await admission
+            except (asyncio.CancelledError, APIError):
+                pass
+            else:
+                job.cancel()
         for job in jobs:
             job.cancel()
+        wav = None  # failed job tracebacks must not retain the decoded backing array
 
 
 # -- ASGI plumbing ------------------------------------------------------------------------------------------------
@@ -279,6 +310,8 @@ class TranscriptionEndpoint:
         outcome = "error"
         lane: Lane | None = None
         watch: DisconnectWatch | None = None
+        release_audio = None
+        wav = None
         try:
             # Refuse before reading a 25 MB body; the lane re-checks both below.
             if self._scheduler.closing:
@@ -295,15 +328,15 @@ class TranscriptionEndpoint:
             audio_s = len(wav) / SAMPLE_RATE
             self._metrics.inc("transcription_audio_seconds_total", "Decoded audio accepted for transcription.",
                               amount=audio_s)
-            with self._audio.hold(wav):
-                spans = split(wav, self._config.max_chunk_samples)
-                chunks = len(spans)
-                texts = run_chunks(lane, wav, spans, deadline, self._window)
-                if params.stream:
-                    await watch.run(self._stream(out, texts, started))
-                else:
-                    text = await watch.run(_collect(texts))
-                    await out.respond(_final(params, text, audio_s))
+            release_audio = self._audio.hold(wav)
+            spans = split(wav, self._config.max_chunk_samples)
+            chunks = len(spans)
+            texts = run_chunks(lane, wav, spans, deadline, self._window)
+            if params.stream:
+                await _until(deadline, watch.run(self._stream(out, texts, started)))
+            else:
+                text = await _until(deadline, watch.run(_collect(texts)))
+                await _until(deadline, out.respond(_final(params, text, audio_s)))
             outcome = "ok"
         except APIError as e:
             outcome = e.code
@@ -320,8 +353,11 @@ class TranscriptionEndpoint:
             log(logging.ERROR, "transcription.unhandled_error", exc_info=True)
             await out.error(internal_error())
         finally:
+            wav = None  # do not keep decoded RAM alive through an exception traceback
             if lane is not None:
                 lane.close()
+                if release_audio is not None:
+                    lane.release_audio_when_idle(release_audio)
             if watch is not None:
                 watch.close()
             fmt = params.response_format if params else "unknown"

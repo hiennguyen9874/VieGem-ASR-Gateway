@@ -15,6 +15,7 @@ import shutil
 import subprocess
 import time
 from pathlib import Path
+from contextlib import contextmanager
 
 import pytest
 
@@ -109,13 +110,21 @@ with urllib.request.urlopen(req, timeout=600) as r:
 """
 
 
-def test_offline_ready_smoke_drain_and_restart(image):
+@contextmanager
+def running_container(image):
     gpu_id = gpu()
     cid = docker("run", "-d", "--network", "none", "--gpus", f"device={gpu_id}", "--read-only",
                  "--tmpfs", "/tmp:size=512m,mode=1777", "--mount", f"type=bind,src={MODELS},dst=/models,readonly",
                  "-e", f"QUAN_API_KEYS={KEY}", image).stdout.strip()
     try:
         wait_ready(cid)
+        yield cid
+    finally:
+        docker("rm", "-f", cid, check=False)
+
+
+def test_offline_ready_and_smoke(image):
+    with running_container(image) as cid:
         r = sidecar(cid, image, "/w/scripts/smoke_server.py", "--base-url", "http://127.0.0.1:8000")
         assert r.returncode == 0, r.stdout[-4000:] + r.stderr[-4000:]
         report = json.loads(r.stdout)
@@ -123,8 +132,13 @@ def test_offline_ready_smoke_drain_and_restart(image):
         (ROOT / "docs/baseline/server-container.json").write_text(json.dumps(report, ensure_ascii=False, indent=2)
                                                                   + "\n")
 
-        if (ROOT / "fixtures-large/vi_long.wav").exists():
-            stream = sidecar(cid, image, "-c", STREAM_LONG, detach=True)
+
+def test_stream_drain_and_restart(image):
+    if not (ROOT / "fixtures-large/vi_long.wav").is_file():
+        pytest.skip("drain/restart gate needs fixtures-large/vi_long.wav; run scripts/fetch_fixtures.py")
+    with running_container(image) as cid:
+        stream = sidecar(cid, image, "-c", STREAM_LONG, detach=True)
+        try:
             assert stream.stdout.readline().strip() == "transcript.text.delta"  # stream is running
             started = time.monotonic()
             docker("stop", "-t", "70", cid, timeout=120)
@@ -141,5 +155,7 @@ def test_offline_ready_smoke_drain_and_restart(image):
 
             docker("start", cid)
             wait_ready(cid)
-    finally:
-        docker("rm", "-f", cid, check=False)
+        finally:
+            if stream.poll() is None:
+                stream.kill()
+            stream.communicate(timeout=120)

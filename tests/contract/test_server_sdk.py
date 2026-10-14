@@ -18,7 +18,7 @@ import pytest
 from app.chunking import split
 from app.transcription import MODEL_ID
 from tests.fake_engine import FakeEngine
-from tests.live_server import KEY, SR, expected_deltas, name, noise, serve, wav_file
+from tests.live_server import KEY, SR, expected_deltas, name, noise, serve, wait_for, wav_file
 
 EXAMPLES = Path(__file__).parent / "examples"
 JS = Path(__file__).parent / "js"
@@ -91,6 +91,8 @@ def test_payloads_match_examples(srv, audio):
     got = sse(post(srv, audio / "fail.wav", stream="true"))
     assert [shape(e) for e in got] == [delta] * (len(got) - 1) + [error] and len(got) >= 2
 
+    # Pipelined work can still be finishing/recovering after the error event reaches the client.
+    wait_for(lambda: srv.app.state.scheduler._jobs == 0 and srv.app.state.worker.ready)
     err = srv.client.post("/v1/audio/transcriptions", files={"file": ("a.wav", b"x")},
                           data={"model": MODEL_ID, "language": "en"}).json()
     assert shape(err) == shape(json.loads((EXAMPLES / "error.json").read_text()))

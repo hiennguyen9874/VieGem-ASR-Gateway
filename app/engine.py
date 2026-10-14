@@ -125,7 +125,10 @@ class EngineWorker:
         check_waveform(wav)
         fut: concurrent.futures.Future = concurrent.futures.Future()
         self._queue.put((wav, fut))
-        return await asyncio.wrap_future(fut)
+        try:
+            return await asyncio.wrap_future(fut)
+        finally:
+            wav = fut = None  # exception tracebacks must not keep completed audio alive
 
     def _set_state(self, state: EngineState) -> None:
         if state != self._state:
@@ -148,9 +151,11 @@ class EngineWorker:
         while (item := self._queue.get()) is not None:
             wav, fut = item
             if not fut.set_running_or_notify_cancel():
+                wav = item = fut = None
                 continue
             if self._state != EngineState.READY:
                 fut.set_exception(model_not_ready())
+                wav = item = fut = None
                 continue
             self._call_started = started = time.monotonic()
             try:
@@ -160,13 +165,15 @@ class EngineWorker:
                 log(logging.ERROR, "engine.inference_failed", exc_info=True, samples=len(wav))
                 self._metrics.inc("worker_failures_total", "Load, inference or recovery failures.", stage="infer")
                 err = inference_failed()
-                err.__cause__ = e
+                err.__cause__ = e.with_traceback(None)  # already logged; the traceback can retain audio
                 fut.set_exception(err)
                 self._recover()
             else:
                 self._call_started = None
                 self._metrics.observe("infer_seconds", "Duration of one inference call.", time.monotonic() - started)
                 fut.set_result(text)
+            finally:
+                wav = item = fut = err = None  # idle worker must not pin completed audio or failure tracebacks
         self._set_state(EngineState.STOPPED)
 
     def _warmup(self) -> None:

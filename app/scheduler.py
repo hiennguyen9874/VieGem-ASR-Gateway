@@ -21,6 +21,7 @@ import itertools
 import logging
 import time
 from collections import deque
+from collections.abc import Callable
 
 import numpy as np
 
@@ -68,6 +69,14 @@ class Lane:
         self.running: Job | None = None
         self.unfinished = 0  # queued + running
         self.closed = False
+        self._release_audio: Callable[[], None] | None = None
+
+    def release_audio_when_idle(self, release: Callable[[], None]) -> None:
+        """Release a closed request's decoded-audio reservation after all its views stop running."""
+        if self.unfinished:
+            self._release_audio = release
+        else:
+            release()
 
     async def submit(self, wav: np.ndarray, deadline: float | None = None) -> Job:
         """Queue one chunk. `deadline` (time.monotonic) expires its result, never the running call."""
@@ -211,6 +220,9 @@ class Scheduler:
         job.state = JobState.DONE
         job.audio = None
         job.lane.unfinished -= 1
+        if job.lane.unfinished == 0 and job.lane._release_audio is not None:
+            release, job.lane._release_audio = job.lane._release_audio, None
+            release()
         self._jobs -= 1
         self._samples -= job.samples
         self._wake()

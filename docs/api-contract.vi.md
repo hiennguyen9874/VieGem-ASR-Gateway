@@ -82,10 +82,12 @@ Kết quả:
 - Giới hạn (cấu hình, xem `app/config.py`): toàn bộ body ≤ `QUAN_MAX_UPLOAD_BYTES` (25 MiB) → 413, kể cả upload
   chunked; ≤ 32 part, mỗi field không phải file ≤ 8 KiB (→ 413), field phải là UTF-8; audio sau decode ≤
   `QUAN_MAX_AUDIO_SECONDS` (1800 s) → 400 `audio_too_long`; decode quá `QUAN_DECODE_TIMEOUT_SECONDS` → 400
-  `invalid_audio`; tổng upload/decode/queue/infer quá `QUAN_REQUEST_TIMEOUT_SECONDS` → 503 `request_timeout`; hết
+  `invalid_audio`; tổng upload/decode/queue/infer/gửi response quá `QUAN_REQUEST_TIMEOUT_SECONDS` → HTTP 503
+  hoặc SSE error `request_timeout` (nếu headers đã gửi); hết
   slot decode, spool disk, lane (`QUAN_QUEUE_MAX_LANES`, kiểm tra trước khi decode) hoặc budget audio đã decode giữ
   trong RAM (`QUAN_MAX_DECODED_SECONDS`, mặc định 3600 s cho mọi request đang chạy) → 429 `server_busy`. Stream bị
-  cụt được decode phần đọc được nếu FFmpeg đọc được.
+  cụt được decode phần đọc được nếu FFmpeg đọc được. Khi client ngắt hoặc request hết hạn, reservation của
+  toàn bộ waveform được giữ tới khi mọi job của lane hoàn tất (slice đang infer vẫn giữ backing array).
 
 ## 5. SSE (`stream=true`)
 
@@ -108,7 +110,8 @@ Kết quả:
   thêm. Cũng áp dụng cho JSON/text và khi đang decode (FFmpeg bị kill). Client không đọc: một lần gửi event quá
   `QUAN_SEND_TIMEOUT_SECONDS` (10 s) được coi như ngắt kết nối (đóng kết nối, không gửi `error`).
 - Tối đa `QUAN_QUEUE_MAX_JOBS_PER_LANE` (2) chunk của một request nằm trong queue/đang chạy cùng lúc: GPU chạy
-  trước client tối đa một cửa sổ đó, server không buffer thêm event.
+  trước client tối đa một cửa sổ đó, server không buffer thêm event. Admission chunk tiếp theo bị block không
+  chặn việc gửi delta của chunk đã hoàn tất; deadline cũng áp dụng cho gửi delta/done.
 
 ## 6. Realtime WebSocket `/v1/realtime` (R3a)
 

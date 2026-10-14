@@ -103,10 +103,13 @@ async def run_chunks(lane, wav, spans, deadline) -> AsyncIterator[str]:
     """Yield chunk texts in audio order; at most `queue_max_jobs_per_lane` jobs in flight."""
 ```
 
-- Cửa sổ pipeline: submit chunk tiếp theo trước khi chờ chunk cũ nhất, tối đa `queue_max_jobs_per_lane` job (mặc định
-  2). GPU không phải chờ client nhận event, và không bao giờ enqueue hết chunk của file dài.
-- `submit(wav[s.start:s.end], deadline)`: slice là view, không copy. Toàn bộ vòng lặp chạy trong
-  `asyncio.timeout_at(deadline)`; hết hạn thì 503 `request_timeout` (job đang chạy vẫn giữ worker, đúng như M1).
+- Cửa sổ pipeline: admission chunk tiếp theo chạy song song với việc nhận kết quả chunk cũ nhất, tối đa
+  `queue_max_jobs_per_lane` job (mặc định 2), tính cả submission đang chờ. Admission bị block không được chặn
+  delta đã hoàn tất. GPU chạy trước client trong cửa sổ này, không bao giờ enqueue hết chunk của file dài.
+- `submit(wav[s.start:s.end], deadline)`: slice là view, không copy. Các wait và toàn bộ bước gửi response
+  (kể cả SSE `done`) bị giới hạn bởi deadline; hết hạn thì HTTP 503/event `request_timeout`. Không đặt timeout
+  context ngang qua `yield` của async generator. Job đang chạy vẫn giữ worker và reservation của toàn bộ wav
+  tới khi lane không còn job; đóng request không trả budget RAM sớm.
 - `Joiner`: bỏ chunk rỗng; delta của chunk khác rỗng = text, thêm `" "` ở đầu nếu đã có chunk khác rỗng trước đó.
   `done.text`/`json.text`/`text` body = `"".join(deltas)`. Đây là đoạn code duy nhất làm việc nối text.
 - `usage.seconds = len(wav) / 16000` (không làm tròn); chỉ có trong JSON, không có trong SSE done.
@@ -171,6 +174,9 @@ Ghi chú:
 
 Cần FakeEngine trả text xác định cho audio thật (đã decode bằng FFmpeg): thêm hook `text_fn` tùy chọn (mặc định vẫn
 `str(int(wav[0]))`), không đổi các test M1/M2 đang có.
+
+Nếu thiếu `fixtures-large/vi_long.wav`, test drain/restart riêng báo skip rõ ràng; smoke pass không có nghĩa
+là drain/restart đã được kiểm chứng.
 
 **Gate R1** (giữ nguyên plan): hai SDK parse được JSON + SSE từ server thật; container offline có `/ready` sau
 warm-up; test auth/error/overload pass; test isolation trên GPU pass; smoke so với baseline (cùng chunk và decoder

@@ -304,12 +304,15 @@ def test_deadline_mid_stream_is_a_request_timeout_event(tmp_path):
 def test_disconnect_while_waiting_for_inference_stops_the_request(tmp_path, stream):
     audio = wav_file(tmp_path / "a.wav", noise(5, seed=8))
     blocker = Blocker(at=1)
-    with serve(FakeEngine(text_fn=blocker), max_chunk_seconds=1.0) as srv:
+    with serve(FakeEngine(text_fn=blocker), max_chunk_seconds=1.0,
+               max_audio_seconds=5, max_decoded_seconds=5) as srv:
         s = raw_post(srv.port, multipart(audio, stream=stream))
         assert blocker.entered.wait(5)
         assert srv.app.state.scheduler._jobs == 2  # pipelined: the next chunk is already queued
         s.close()
         wait_for(lambda: srv.app.state.scheduler._lanes == 0)
+        assert srv.app.state.audio._held == 5 * SR  # running slice still pins the whole decoded file
+        envelope(post(srv, audio), 429, "server_busy")
         blocker.release.set()
         wait_for(lambda: idle(srv.app))
         time.sleep(0.2)
@@ -361,13 +364,17 @@ def test_shutdown_drains_a_running_stream(tmp_path):
         assert evs[-1] == {"type": "transcript.text.done", "text": "".join(expected_deltas(x, 1.0))}
 
 
-def test_send_timeout_counts_as_disconnect(capfd):
+@pytest.mark.parametrize("outcome", ["send_timeout", "request_timeout"])
+def test_slow_send_is_bounded_by_send_and_request_deadlines(capfd, outcome):
     """A client that stops reading: called as ASGI directly, since a real socket buffers far more than an event."""
     x = noise(3.5, seed=11)
     elapsed = []
 
     async def main():
-        app = create_app(config(max_chunk_seconds=1.0, send_timeout_seconds=0.2), FakeEngine(text_fn=name))
+        app = create_app(config(max_chunk_seconds=1.0,
+                                request_timeout_seconds=0.2 if outcome == "request_timeout" else 10,
+                                send_timeout_seconds=0.2 if outcome == "send_timeout" else 2),
+                         FakeEngine(text_fn=name))
         buf = io.BytesIO()
         sf.write(buf, x, SR, format="WAV", subtype="FLOAT")
         boundary = "b0undary"
@@ -392,8 +399,8 @@ def test_send_timeout_counts_as_disconnect(capfd):
 
         async def send(message):
             sent.append(message)
-            if message["type"] == "http.response.body":
-                await asyncio.Event().wait()  # the client never reads
+            if len(sent) == 2:
+                await asyncio.sleep(0.4)  # inference can finish while the first delta is blocked
 
         async with app.router.lifespan_context(app):
             while not app.state.worker.ready:
@@ -401,13 +408,18 @@ def test_send_timeout_counts_as_disconnect(capfd):
             started = time.monotonic()
             await asyncio.wait_for(app(scope, receive, send), 5)
             elapsed.append(time.monotonic() - started)
-            assert app.state.scheduler._lanes == 0 and app.state.scheduler._jobs == 0
-            assert app.state.audio._held == 0
-            assert outcomes(app, "send_timeout", "json", "true") == 1
-        assert [m["type"] for m in sent] == ["http.response.start", "http.response.body"]
+            await asyncio.sleep(0.01)  # waveform finalization is accounted on the event loop
+            assert idle(app)
+            assert outcomes(app, outcome, "json", "true") == 1
         assert sent[0]["status"] == 200
+        if outcome == "send_timeout":
+            assert [m["type"] for m in sent] == ["http.response.start", "http.response.body"]
+        else:
+            assert len(sent) == 3
+            assert json.loads(sent[-1]["body"].decode().removeprefix("data: "))["error"]["code"] == outcome
+            assert sent[-1]["more_body"] is False
 
     asyncio.run(main())
     assert elapsed[0] < 3
     logs = [json.loads(line) for line in capfd.readouterr().err.splitlines() if line.startswith("{")]
-    assert [e["outcome"] for e in logs if e["event"] == "transcription.request"] == ["send_timeout"]
+    assert [e["outcome"] for e in logs if e["event"] == "transcription.request"] == [outcome]

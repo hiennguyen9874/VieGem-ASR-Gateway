@@ -28,8 +28,8 @@ import os
 import shutil
 import tempfile
 import time
-from collections.abc import AsyncIterator, Iterator
-from contextlib import asynccontextmanager, contextmanager, suppress
+from collections.abc import AsyncIterator, Callable
+from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -182,17 +182,17 @@ class AudioIngress:
 
     # -- decode ----------------------------------------------------------------------------------------------------
 
-    @contextmanager
-    def hold(self, wav: np.ndarray) -> Iterator[None]:
-        """Account a decoded waveform against the shared RAM budget while the caller keeps it (429 if full)."""
+    def hold(self, wav: np.ndarray) -> Callable[[], None]:
+        """Reserve decoded RAM (429 if full). Release only after the request AND its jobs finish."""
         n = len(wav)
         if self._held + n > self._max_held:
             raise server_busy(retry_after=1)
         self._held += n
-        try:
-            yield
-        finally:
+
+        def release() -> None:
             self._held -= n
+
+        return release
 
     async def decode(self, path: Path, deadline: float) -> np.ndarray:
         """Decode a spooled upload to 16 kHz mono float32. Raises `APIError` (400 invalid_audio/audio_too_long,

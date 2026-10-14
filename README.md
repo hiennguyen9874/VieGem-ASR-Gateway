@@ -30,9 +30,11 @@ token và không truy cập Hub.
 nvidia-smi                                   # chọn GPU còn trống
 export QUAN_API_KEYS=$(python3 -c "import secrets; print(secrets.token_urlsafe(32))")
 CUDA_VISIBLE_DEVICES=<gpu> HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 uv run --offline uvicorn --factory app.main:create_app \
-    --host 127.0.0.1 --port 8000 --workers 1 --no-access-log --timeout-graceful-shutdown 30
-curl -s localhost:8000/ready                 # {"status":"ready"} sau khi load + warm-up (~15 s)
+    --host 127.0.0.1 --port 18080 --workers 1 --no-access-log --timeout-graceful-shutdown 30
+curl -s localhost:18080/ready                 # {"status":"ready"} sau khi load + warm-up (~15 s)
 ```
+
+Ví dụ local dùng port `18080`; chọn port khác nếu đang bị chiếm (port `8000` đã có service trên host này).
 
 Luôn `--workers 1`: muốn dùng nhiều GPU thì chạy nhiều process (mỗi process một `CUDA_VISIBLE_DEVICES`, một port)
 sau load balancer. Cần `ffmpeg` trên `PATH`.
@@ -40,12 +42,12 @@ sau load balancer. Cần `ffmpeg` trên `PATH`.
 ## 3. Gọi API
 
 ```bash
-curl -s localhost:8000/v1/models -H "Authorization: Bearer $QUAN_API_KEYS"
-curl -s localhost:8000/v1/audio/transcriptions -H "Authorization: Bearer $QUAN_API_KEYS" \
+curl -s localhost:18080/v1/models -H "Authorization: Bearer $QUAN_API_KEYS"
+curl -s localhost:18080/v1/audio/transcriptions -H "Authorization: Bearer $QUAN_API_KEYS" \
     -F model=quan-transcribe-1.0 -F file=@tests/fixtures/vi_a.wav
-curl -s localhost:8000/v1/audio/transcriptions -H "Authorization: Bearer $QUAN_API_KEYS" \
+curl -s localhost:18080/v1/audio/transcriptions -H "Authorization: Bearer $QUAN_API_KEYS" \
     -F model=quan-transcribe-1.0 -F response_format=text -F file=@tests/fixtures/vi_a.wav
-curl -sN localhost:8000/v1/audio/transcriptions -H "Authorization: Bearer $QUAN_API_KEYS" \
+curl -sN localhost:18080/v1/audio/transcriptions -H "Authorization: Bearer $QUAN_API_KEYS" \
     -F model=quan-transcribe-1.0 -F stream=true -F file=@tests/fixtures/vi_a.wav
 ```
 
@@ -54,7 +56,7 @@ OpenAI Python SDK (`openai==3.31.0` đã kiểm thử; JS `openai@7.33.0` tươn
 ```python
 from openai import OpenAI
 
-client = OpenAI(base_url="http://127.0.0.1:8000/v1", api_key="<QUAN key>")
+client = OpenAI(base_url="http://127.0.0.1:18080/v1", api_key="<QUAN key>")
 with open("tests/fixtures/vi_a.wav", "rb") as f:
     print(client.audio.transcriptions.create(file=f, model="quan-transcribe-1.0").text)
 with open("tests/fixtures/vi_a.wav", "rb") as f:
@@ -82,7 +84,7 @@ Biến `QUAN_*` được kiểm tra lúc khởi động (biến lạ, giá trị
 | `QUAN_MAX_CHUNK_SECONDS` | 30 | Độ dài chunk (giữ 30 để giống baseline) |
 | `QUAN_QUEUE_MAX_LANES` | 32 | Request đồng thời (đang decode/chờ/infer) → 429 |
 | `QUAN_QUEUE_TIMEOUT_SECONDS` | 30 | Chờ chỗ trong queue/slot decode tối đa → 429 |
-| `QUAN_REQUEST_TIMEOUT_SECONDS` | 600 | Tổng upload + decode + queue + infer → 503 `request_timeout` |
+| `QUAN_REQUEST_TIMEOUT_SECONDS` | 600 | Tổng upload + decode + queue + infer + gửi response → 503/event `request_timeout` |
 | `QUAN_SEND_TIMEOUT_SECONDS` | 10 | Một lần gửi SSE; client không đọc → ngắt |
 | `QUAN_INFER_HANG_SECONDS` | 120 | Một call inference lâu hơn → worker "hung", `/health` 503 |
 | `QUAN_SHUTDOWN_DRAIN_SECONDS` | 30 | Chờ job đang chạy khi tắt |
@@ -110,11 +112,12 @@ host có Docker + NVIDIA Container Toolkit.
 
 ## 6. Reverse proxy và TLS
 
-Gateway không làm TLS, rate limit theo client hay CORS. Đặt sau reverse proxy, ví dụ nginx:
+Gateway không làm TLS, rate limit theo client hay CORS. Đặt sau reverse proxy, ví dụ nginx cho server local
+(port `18080`; đổi upstream thành port `8000` nếu dùng compose mặc định):
 
 ```nginx
 location /v1/ {
-    proxy_pass http://127.0.0.1:8000;
+    proxy_pass http://127.0.0.1:18080;
     proxy_http_version 1.1;
     proxy_buffering off;            # SSE: không gom event (server cũng gửi X-Accel-Buffering: no)
     proxy_request_buffering off;    # stream upload tới gateway, giới hạn được kiểm tra ở gateway
