@@ -37,6 +37,9 @@ def test_api_keys_file(tmp_path):
     {},  # no public default key
     {"QUAN_API_KEYS": " , "},
     {"QUAN_API_KEYS": "short"},
+    {"QUAN_API_KEYS": "é" * 20},
+    {"QUAN_API_KEYS": "界" * 20},
+    {"QUAN_API_KEYS": "a" * 19 + "\u007f"},
     {"QUAN_API_KEYS": f"{KEY},{KEY}"},
     {"QUAN_API_KEYS": KEY, "QUAN_API_KEYS_FILE": "/x"},
     {"QUAN_API_KEYS": KEY, "HF_TOKEN": KEY},  # gateway key must not be the HF token

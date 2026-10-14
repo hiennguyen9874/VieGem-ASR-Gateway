@@ -119,7 +119,7 @@ test('typed copies equal the shared example files', () => {
 // What the SDK handed to fetch(); multipart bodies arrive as a native FormData.
 type Sent = { url: string; headers: Headers; body: unknown };
 
-function client(status: number, body: Buffer, contentType: string, seen: Sent[] = []) {
+function client(status: number, body: Buffer, contentType: string, seen: Sent[] = [], headers: Record<string, string> = {}) {
   return new OpenAI({
     apiKey: 'sk-test',
     baseURL: 'http://gateway.test/v1',
@@ -128,7 +128,7 @@ function client(status: number, body: Buffer, contentType: string, seen: Sent[] 
       const url = String(input instanceof Request ? input.url : input);
       // The SDK first probes fetch('data:,') for FormData support; record gateway requests only.
       if (url.startsWith('http://gateway.test/')) seen.push({ url, headers: new Headers(init?.headers), body: init?.body });
-      return new Response(new Uint8Array(body), { status, headers: { 'content-type': contentType } });
+      return new Response(new Uint8Array(body), { status, headers: { 'content-type': contentType, ...headers } });
     },
   });
 }
@@ -198,6 +198,35 @@ test('SSE error after headers rejects without done', async () => {
     (err: unknown) => err instanceof OpenAI.APIError && err.code === 'inference_failed',
   );
   assert.deepEqual(got, ['transcript.text.delta']);
+});
+
+test('service error mappings and request ids', async () => {
+  const classes = {
+    400: OpenAI.BadRequestError, 401: OpenAI.AuthenticationError, 404: OpenAI.NotFoundError,
+    405: OpenAI.APIError, 413: OpenAI.APIError, 429: OpenAI.RateLimitError,
+    500: OpenAI.InternalServerError, 503: OpenAI.InternalServerError,
+  };
+  const cases: Array<{
+    status: number; headers: Record<string, string>;
+    error: { code: string; type: string; param: string | null; message: string };
+  }> = JSON.parse(read('service_errors.json').toString());
+  for (const c of cases) {
+    await assert.rejects(
+      client(c.status, Buffer.from(JSON.stringify({ error: c.error })), 'application/json', [],
+        { 'x-request-id': 'req_contract_example', ...c.headers }).models.list(),
+      (err: unknown) => {
+        assert.ok(err instanceof OpenAI.APIError);
+        assert.ok(err instanceof classes[c.status as keyof typeof classes]);
+        assert.equal(err.status, c.status);
+        assert.equal(err.code, c.error.code);
+        assert.equal(err.type, c.error.type);
+        assert.equal(err.param, c.error.param);
+        assert.equal(err.requestID, 'req_contract_example');
+        assert.equal(err.headers?.get('retry-after') ?? null, c.headers['Retry-After'] ?? null);
+        return true;
+      },
+    );
+  }
 });
 
 test('HTTP error envelope', async () => {

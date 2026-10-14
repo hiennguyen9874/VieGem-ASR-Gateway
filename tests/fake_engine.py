@@ -36,6 +36,8 @@ class FakeEngine:
         self.fail_calls = 0  # next N transcribe() calls raise
         self.warmup_error: Exception | None = None
         self.warmups = 0
+        self.warmup_gate = threading.Event()
+        self.warmup_gate.set()
 
     def load(self) -> None:
         self.load_gate.wait(10)
@@ -44,6 +46,7 @@ class FakeEngine:
 
     def warmup(self) -> None:
         self.warmups += 1
+        self.warmup_gate.wait(10)
         if self.warmup_error:
             raise self.warmup_error
 

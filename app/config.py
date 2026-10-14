@@ -64,8 +64,8 @@ class Config:
         if not self.api_keys:
             raise ConfigError("QUAN_API_KEYS (or QUAN_API_KEYS_FILE) must define at least one key")
         for key in self.api_keys:
-            if len(key) < MIN_API_KEY_LENGTH or any(c.isspace() for c in key) or not key.isprintable():
-                raise ConfigError(f"API keys must be >= {MIN_API_KEY_LENGTH} printable characters without spaces")
+            if len(key) < MIN_API_KEY_LENGTH or not all('!' <= c <= '~' for c in key):
+                raise ConfigError(f"API keys must be >= {MIN_API_KEY_LENGTH} printable ASCII characters without spaces")
         if len(set(self.api_keys)) != len(self.api_keys):
             raise ConfigError("duplicate API key")
         if self.log_level not in ("DEBUG", "INFO", "WARNING", "ERROR"):

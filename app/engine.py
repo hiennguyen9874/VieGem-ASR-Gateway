@@ -136,7 +136,7 @@ class EngineWorker:
         t0 = time.monotonic()
         try:
             self._engine.load()
-            self._engine.warmup()
+            self._warmup()
         except Exception:
             log(logging.ERROR, "engine.load_failed", exc_info=True)
             self._metrics.inc("worker_failures_total", "Load, inference or recovery failures.", stage="load")
@@ -169,11 +169,18 @@ class EngineWorker:
                 fut.set_result(text)
         self._set_state(EngineState.STOPPED)
 
+    def _warmup(self) -> None:
+        self._call_started = time.monotonic()
+        try:
+            self._engine.warmup()
+        finally:
+            self._call_started = None
+
     def _recover(self) -> None:
         """Re-run warm-up on this thread; queued calls wait. If it fails the model stays unavailable."""
         self._set_state(EngineState.RECOVERING)
         try:
-            self._engine.warmup()
+            self._warmup()
         except Exception:
             log(logging.ERROR, "engine.recovery_failed", exc_info=True)
             self._metrics.inc("worker_failures_total", "Load, inference or recovery failures.", stage="recover")

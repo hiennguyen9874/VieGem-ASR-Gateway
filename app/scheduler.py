@@ -48,6 +48,7 @@ class Job:
         self.lane, self.audio, self.samples, self.deadline = lane, audio, len(audio), deadline
         self.future: asyncio.Future[str] = asyncio.get_running_loop().create_future()
         self.state = JobState.QUEUED
+        self.expired = False
         self.enqueued_at = time.monotonic()
 
     def cancel(self) -> None:
@@ -69,7 +70,7 @@ class Lane:
         self.closed = False
 
     async def submit(self, wav: np.ndarray, deadline: float | None = None) -> Job:
-        """Queue one chunk. `deadline` (time.monotonic) drops the job if it has not started by then."""
+        """Queue one chunk. `deadline` (time.monotonic) expires its result, never the running call."""
         return await self._scheduler._submit(self, wav, deadline)
 
     def close(self) -> None:
@@ -90,6 +91,7 @@ class Scheduler:
         self._max_jobs = config.queue_max_jobs
         self._max_jobs_per_lane = config.queue_max_jobs_per_lane
         self._max_samples = config.queue_max_buffered_samples
+        self._max_chunk_samples = int(config.max_chunk_seconds * SAMPLE_RATE)
         self._queue_timeout = config.queue_timeout_seconds
         self._live_ratio = config.live_priority_ratio
         self._rings = {JobKind.LIVE: deque(), JobKind.FILE: deque()}  # lanes with queued jobs, round-robin order
@@ -162,6 +164,8 @@ class Scheduler:
 
     async def _submit(self, lane: Lane, wav: np.ndarray, deadline: float | None) -> Job:
         check_waveform(wav)
+        if len(wav) > self._max_chunk_samples:
+            raise ValueError("job exceeds max_chunk_seconds; chunk it first")
         if len(wav) > self._max_samples:
             raise ValueError("job larger than the queue budget; chunk it first")
         try:
@@ -275,6 +279,15 @@ class Scheduler:
                                   now - job.enqueued_at, kind=kind.value)
             job.state, lane.running = JobState.RUNNING, job
             error: APIError | None = None
+
+            def expire(job=job) -> None:
+                if not job.future.done():
+                    job.expired = True
+                    job.future.set_exception(request_timeout())
+
+            timer = None
+            if job.deadline is not None:
+                timer = asyncio.get_running_loop().call_later(max(0, job.deadline - now), expire)
             try:
                 text = await self._worker.transcribe(job.audio)
             except APIError as e:
@@ -282,10 +295,18 @@ class Scheduler:
             except Exception:  # bug in the adapter: never leak details to the client
                 log(logging.ERROR, "scheduler.job_error", exc_info=True, request_id=lane.request_id)
                 error = inference_failed()
+            finally:
+                if timer is not None:
+                    timer.cancel()
+            # The worker completion callback can win the race against the deadline timer.
+            if job.deadline is not None and time.monotonic() >= job.deadline:
+                expire()
             lane.running = None
             self._release(job)
             infer_s = time.monotonic() - now
-            if job.future.done():
+            if job.expired:
+                outcome = "expired"
+            elif job.future.done():
                 outcome = "discarded"
             elif error is not None:
                 outcome = "failed"

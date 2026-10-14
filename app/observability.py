@@ -11,6 +11,7 @@ import logging
 import sys
 import threading
 from collections.abc import Callable
+from dataclasses import dataclass, field
 
 request_id: contextvars.ContextVar[str | None] = contextvars.ContextVar("request_id", default=None)
 logger = logging.getLogger("quan")
@@ -50,6 +51,13 @@ Labels = tuple[tuple[str, str], ...]
 DEFAULT_BUCKETS = (0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0, 120.0)
 
 
+@dataclass
+class HistogramState:
+    buckets: list[int] = field(default_factory=lambda: [0] * len(DEFAULT_BUCKETS))
+    total: float = 0.0
+    count: int = 0
+
+
 class Metrics:
     """Thread-safe counters, gauges and histograms rendered in Prometheus text format (0.0.4)."""
 
@@ -58,7 +66,7 @@ class Metrics:
         self._lock = threading.Lock()
         self._help: dict[str, tuple[str, str]] = {}  # name -> (type, help)
         self._values: dict[str, dict[Labels, float]] = {}
-        self._hists: dict[str, dict[Labels, list]] = {}  # labels -> [bucket counts, sum, count]
+        self._hists: dict[str, dict[Labels, HistogramState]] = {}
         self._gauge_fns: dict[str, Callable[[], float]] = {}
 
     def _declare(self, name: str, type_: str, help_: str) -> None:
@@ -86,12 +94,15 @@ class Metrics:
         self._declare(name, "histogram", help_)
         key = tuple(sorted(labels.items()))
         with self._lock:
-            h = self._hists.setdefault(name, {}).setdefault(key, [[0] * len(DEFAULT_BUCKETS), 0.0, 0])
+            series = self._hists.setdefault(name, {})
+            if key not in series:
+                series[key] = HistogramState()
+            h = series[key]
             i = bisect.bisect_left(DEFAULT_BUCKETS, value)
             if i < len(DEFAULT_BUCKETS):
-                h[0][i] += 1
-            h[1] += value
-            h[2] += 1
+                h.buckets[i] += 1
+            h.total += value
+            h.count += 1
 
     def value(self, name: str, **labels: str) -> float:
         with self._lock:
@@ -109,14 +120,14 @@ class Metrics:
                     out.append(f"{full} {sampled[name]}")
                 for key, v in sorted(self._values.get(name, {}).items()):
                     out.append(f"{full}{_labels(key)} {v}")
-                for key, (buckets, total, count) in sorted(self._hists.get(name, {}).items()):
+                for key, h in sorted(self._hists.get(name, {}).items()):
                     cumulative = 0
-                    for bound, n in zip(DEFAULT_BUCKETS, buckets):
+                    for bound, n in zip(DEFAULT_BUCKETS, h.buckets):
                         cumulative += n
                         out.append(f"{full}_bucket{_labels(key + (('le', str(bound)),))} {cumulative}")
-                    out.append(f"{full}_bucket{_labels(key + (('le', '+Inf'),))} {count}")
-                    out.append(f"{full}_sum{_labels(key)} {total}")
-                    out.append(f"{full}_count{_labels(key)} {count}")
+                    out.append(f"{full}_bucket{_labels(key + (('le', '+Inf'),))} {h.count}")
+                    out.append(f"{full}_sum{_labels(key)} {h.total}")
+                    out.append(f"{full}_count{_labels(key)} {h.count}")
         return "\n".join(out) + "\n"
 
 

@@ -1,0 +1,14 @@
+[
+  {"status":400,"headers":{},"error":{"message":"Invalid request.","type":"invalid_request_error","param":null,"code":"invalid_value"}},
+  {"status":401,"headers":{},"error":{"message":"Missing or invalid API key.","type":"authentication_error","param":null,"code":"invalid_api_key"}},
+  {"status":404,"headers":{},"error":{"message":"The model 'unknown' does not exist.","type":"invalid_request_error","param":"model","code":"model_not_found"}},
+  {"status":404,"headers":{},"error":{"message":"Not found.","type":"invalid_request_error","param":null,"code":"not_found"}},
+  {"status":405,"headers":{},"error":{"message":"Method not allowed.","type":"invalid_request_error","param":null,"code":"method_not_allowed"}},
+  {"status":413,"headers":{},"error":{"message":"Request body exceeds 1024 bytes.","type":"invalid_request_error","param":null,"code":"request_too_large"}},
+  {"status":429,"headers":{"Retry-After":"1"},"error":{"message":"Server is busy, retry later.","type":"rate_limit_error","param":null,"code":"server_busy"}},
+  {"status":500,"headers":{},"error":{"message":"Inference failed.","type":"server_error","param":null,"code":"inference_failed"}},
+  {"status":500,"headers":{},"error":{"message":"Internal server error.","type":"server_error","param":null,"code":"internal_error"}},
+  {"status":503,"headers":{"Retry-After":"5"},"error":{"message":"Model is not ready.","type":"server_error","param":null,"code":"model_not_ready"}},
+  {"status":503,"headers":{},"error":{"message":"Server is shutting down.","type":"server_error","param":null,"code":"shutting_down"}},
+  {"status":503,"headers":{},"error":{"message":"Request timed out waiting for inference.","type":"server_error","param":null,"code":"request_timeout"}}
+]

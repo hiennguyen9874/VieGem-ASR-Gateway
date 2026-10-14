@@ -157,9 +157,9 @@ Envelope (ví dụ `examples/error.json`):
 | 413 | `invalid_request_error` | `request_too_large` (body/file vượt giới hạn, kiểm tra trước multipart parse) |
 | 429 | `rate_limit_error` | `server_busy` (queue/concurrency đầy); kèm `Retry-After` khi có ước lượng |
 | 500 | `server_error` | `inference_failed`, `internal_error` (lỗi không lường trước, không lộ chi tiết) |
-| 503 | `server_error` | `model_not_ready` (đang load/recover, `Retry-After: 5`), `shutting_down` (đang drain), `request_timeout` (job quá hạn trước khi được chạy) |
+| 503 | `server_error` | `model_not_ready` (đang load/recover, `Retry-After: 5`), `shutting_down` (đang drain), `request_timeout` (job quá hạn khi chờ hoặc đang chạy; call đang chạy vẫn giữ worker/budget tới khi kết thúc) |
 
-Mọi response (kể cả lỗi) có header `x-request-id: req_…`; SDK đưa giá trị này vào `request_id` của exception.
+Mọi response (kể cả lỗi) có header `x-request-id: req_…`; Python SDK đưa giá trị này vào `request_id` của exception; JS SDK dùng `requestID`.
 
 Endpoint vận hành (không thuộc profile OpenAI): `GET /health` (liveness, không cần auth; 503 `unhealthy` khi
 cần restart process), `GET /ready` (readiness, không cần auth; 200 `{"status": "ready"}` hoặc 503 như trên),
@@ -167,7 +167,8 @@ cần restart process), `GET /ready` (readiness, không cần auth; 200 `{"statu
 
 Không bao giờ trả FastAPI 422 `{"detail": …}`. Message không chứa transcript, audio, token hay đường dẫn nội bộ.
 SDK ánh xạ status → class (`BadRequestError`, `AuthenticationError`, `NotFoundError`, …) và đọc `code`/`param`/`type`
-từ envelope (đã test với 400).
+từ envelope. `examples/service_errors.json` được kiểm thử bằng cả Python và JS SDK cho các status/code M1,
+`Retry-After` và request ID. API key phải có ít nhất 16 ký tự ASCII printable, không có khoảng trắng.
 
 ## 8. Kiểm tra contract
 

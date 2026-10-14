@@ -54,6 +54,7 @@ async def serving(engine: FakeEngine, **overrides):
         yield scheduler, worker, metrics
     finally:
         engine.gate.set()
+        engine.warmup_gate.set()
         await scheduler.close(5)
         assert worker.stop(5)
 
@@ -390,3 +391,68 @@ def test_invalid_waveforms_never_reach_the_engine():
         with pytest.raises(ValueError):
             check_waveform(bad)
     check_waveform(np.zeros(161, np.float32))
+
+
+@pytest.mark.parametrize("kind", [FILE, LIVE])
+@run_async
+async def test_chunk_limit_enforced_independently_of_queue_budget(kind):
+    async with serving(FakeEngine(), max_chunk_seconds=0.1) as (scheduler, _, _):
+        lane = scheduler.open_lane(kind)
+        assert await (await lane.submit(wav(1, 1600))) == "1"
+        with pytest.raises(ValueError, match="max_chunk_seconds"):
+            await lane.submit(wav(2, 1601))
+        assert scheduler._jobs == 0 and scheduler._samples == 0
+
+
+@run_async
+async def test_running_deadline_expires_result_but_keeps_worker_and_budget():
+    engine = FakeEngine()
+    engine.gate.clear()
+    async with serving(engine) as (scheduler, _, metrics):
+        lane = scheduler.open_lane(FILE)
+        late = await lane.submit(wav(1), deadline=time.monotonic() + 0.1)
+        await call_started(engine)
+        with pytest.raises(APIError) as exc:
+            await late
+        assert (exc.value.status, exc.value.code) == (503, "request_timeout")
+        following = await scheduler.open_lane(LIVE).submit(wav(2))
+        await asyncio.sleep(0.05)
+        assert scheduler._jobs == 2 and scheduler._samples == 3200
+        assert engine.calls == [1] and not following.future.done()
+        engine.gate.set()
+        assert await following == "2"
+        assert engine.max_active == 1 and jobs(metrics, "expired") == 1
+        assert scheduler._jobs == 0 and scheduler._samples == 0
+
+
+@pytest.mark.parametrize("recovery", [False, True])
+@run_async
+async def test_blocked_warmup_marks_worker_unhealthy(recovery):
+    engine = FakeEngine()
+    if recovery:
+        engine.fail_calls = 1
+    else:
+        engine.warmup_gate.clear()
+    cfg = config(infer_hang_seconds=0.05)
+    metrics = Metrics()
+    worker = EngineWorker(engine, cfg.infer_hang_seconds, metrics)
+    scheduler = Scheduler(worker, cfg, metrics)
+    worker.start()
+    scheduler.start()
+    try:
+        if recovery:
+            await wait_until(lambda: worker.ready)
+            engine.warmup_gate.clear()
+            with pytest.raises(APIError):
+                await (await scheduler.open_lane(FILE).submit(wav(1)))
+        await wait_until(lambda: worker.hung)
+        assert worker.state == (EngineState.RECOVERING if recovery else EngineState.LOADING)
+        assert not worker.healthy and not worker.ready
+        assert "quan_worker_hung 1.0" in metrics.render()
+        engine.warmup_gate.set()
+        await wait_until(lambda: worker.ready)
+        assert worker.healthy
+    finally:
+        engine.warmup_gate.set()
+        await scheduler.close(1)
+        assert worker.stop(1)

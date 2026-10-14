@@ -40,10 +40,10 @@ def parse_multipart(request) -> dict[str, list]:
     return fields
 
 
-def client_with(status: int, body: bytes, content_type: str, seen: list):
+def client_with(status: int, body: bytes, content_type: str, seen: list, headers: dict | None = None):
     def handler(request):
         seen.append(request)
-        return httpx2.Response(status, content=body, headers={"content-type": content_type})
+        return httpx2.Response(status, content=body, headers={"content-type": content_type, **(headers or {})})
 
     return openai.OpenAI(
         api_key="sk-test", base_url="http://gateway.test/v1", max_retries=0,
@@ -128,6 +128,42 @@ def test_http_error_envelope():
         c.audio.transcriptions.create(file=f, model=MODEL, language="en")
     e = exc.value
     assert (e.status_code, e.code, e.param, e.type) == (400, "unsupported_language", "language", "invalid_request_error")
+
+
+@pytest.mark.parametrize("case", json.loads(example("service_errors.json")))
+def test_service_errors_and_request_ids(case):
+    classes = {
+        400: openai.BadRequestError, 401: openai.AuthenticationError, 404: openai.NotFoundError,
+        405: openai.APIStatusError, 413: openai.APIStatusError, 429: openai.RateLimitError,
+        500: openai.InternalServerError, 503: openai.InternalServerError,
+    }
+    headers = {"x-request-id": "req_contract_example", **case["headers"]}
+    c = client_with(case["status"], json.dumps({"error": case["error"]}).encode(),
+                    "application/json", [], headers)
+    with pytest.raises(classes[case["status"]]) as exc:
+        c.models.list()
+    e = exc.value
+    expected = case["error"]
+    assert (e.status_code, e.code, e.type, e.param) == (
+        case["status"], expected["code"], expected["type"], expected["param"],
+    )
+    assert e.request_id == "req_contract_example"
+    assert e.response.headers.get("retry-after") == case["headers"].get("Retry-After")
+
+
+def test_service_examples_match_gateway_errors():
+    from app import errors
+
+    actual = [
+        errors.invalid_request("invalid_value", "Invalid request."), errors.invalid_api_key(),
+        errors.model_not_found("unknown"), errors.not_found(),
+        errors.APIError(405, "invalid_request_error", "method_not_allowed", "Method not allowed."),
+        errors.request_too_large(1024), errors.server_busy(1), errors.inference_failed(),
+        errors.internal_error(), errors.model_not_ready(), errors.shutting_down(), errors.request_timeout(),
+    ]
+    assert [{"status": e.status, "headers": e.headers, **e.body()} for e in actual] == json.loads(
+        example("service_errors.json"),
+    )
 
 
 def lines(name: str) -> list[dict]:
