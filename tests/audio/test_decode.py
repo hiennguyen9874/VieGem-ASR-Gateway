@@ -69,6 +69,8 @@ def media(tmp_path_factory) -> dict[str, Path]:
         "ogg_vorbis.ogg": ["-i", src, "-c:a", "libvorbis"],
         "ogg_opus.ogg": ["-i", src, "-c:a", "libopus"],
         "webm_opus.webm": ["-i", src, "-c:a", "libopus"],
+        "ogg_flac.ogg": ["-i", src, "-c:a", "flac", "-f", "ogg"],
+        "matroska_aac.mka": ["-i", src, "-c:a", "aac", "-f", "matroska"],
         # hostile / unsupported
         "video_only.mp4": ["-f", "lavfi", "-i", "testsrc=d=1:s=64x64", "-c:v", "mpeg4"],
         "adpcm.wav": ["-i", src, "-c:a", "adpcm_ms"],  # codec not on the allowlist
@@ -137,7 +139,7 @@ def test_lossless_rates_and_channels_resample_to_16k_mono(media, name):
 
 
 @pytest.mark.parametrize("name", ["mp3_44k.mp3", "m4a_aac.m4a", "mp4_video_aac.mp4", "ogg_vorbis.ogg",
-                                  "ogg_opus.ogg", "webm_opus.webm"])
+                                  "ogg_opus.ogg", "webm_opus.webm", "ogg_flac.ogg", "matroska_aac.mka"])
 def test_lossy_containers_decode(media, name):
     wav = decode(media[name])
     assert wav.dtype == np.float32 and np.isfinite(wav).all()

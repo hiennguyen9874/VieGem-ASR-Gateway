@@ -55,6 +55,14 @@ def test_cut_lands_in_the_quiet_gap():
     assert 27 * SR <= spans[0].end <= int(27.3 * SR)
 
 
+def test_short_limit_searches_the_full_five_seconds():
+    x = noise(8 * SR)
+    x[2 * SR:int(2.3 * SR)] = 0
+    spans = split(x, 6 * SR)
+    check(spans, len(x), 6 * SR)
+    assert 2 * SR <= spans[0].end <= int(2.3 * SR)
+
+
 def test_gap_outside_the_search_window_is_ignored():
     x = noise(40 * SR)
     x[10 * SR:11 * SR] = 0  # quiet, but more than 5 s before the 30 s limit

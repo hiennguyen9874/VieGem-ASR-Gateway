@@ -36,7 +36,7 @@ def split(wav: np.ndarray, max_samples: int) -> list[Span]:
     if n <= MIN_AUDIO_SAMPLES:
         return []
     min_chunk = MIN_AUDIO_SAMPLES + 1
-    search = min(int(SEARCH_SECONDS * SAMPLE_RATE), max_samples // 2)
+    search = int(SEARCH_SECONDS * SAMPLE_RATE)
     spans, start = [], 0
     while n - start > max_samples:
         hi = min(start + max_samples, n - min_chunk)  # keep the remainder long enough to be transcribed

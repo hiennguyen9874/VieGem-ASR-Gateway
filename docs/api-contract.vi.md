@@ -48,7 +48,7 @@ Auth: `Authorization: Bearer <key>`. Body `multipart/form-data`.
 
 | Field | Quy tắc |
 |---|---|
-| `file` | Bắt buộc, đúng một part. Tên file client bị bỏ qua (không dùng làm path, không log). Định dạng nhận diện theo nội dung, không theo đuôi: WAV (PCM/float/A-law/µ-law), FLAC, MP3/MPGA, MP4/M4A (AAC, ALAC), OGG (Vorbis, Opus), WEBM/Matroska (Opus, Vorbis). Container/codec khác (ADTS `.aac`, MPEG-PS, playlist, ADPCM, …) → 400 `invalid_audio`. Mọi sample rate/số kênh được đưa về mono 16 kHz (downmix của FFmpeg) |
+| `file` | Bắt buộc, đúng một part. Tên file client bị bỏ qua (không dùng làm path, không log). Định dạng nhận diện theo nội dung, không theo đuôi: Container allowlist: WAV, FLAC, MP3/MPGA, MP4/M4A, OGG, WEBM/Matroska. Decoder allowlist: PCM (`s16le`, `s24le`, `s32le`, `u8`, `f32le`, `f64le`, A-law, µ-law), FLAC, ALAC, MP1/MP2/MP3, AAC, Vorbis, Opus. Chấp nhận mọi tổ hợp container/decoder trong hai allowlist mà FFmpeg đọc được (kể cả OGG/FLAC và Matroska/AAC); không giới hạn theo cặp. Container/codec ngoài allowlist (ADTS `.aac`, MPEG-PS, playlist, ADPCM, …) → 400 `invalid_audio`. Mọi sample rate/số kênh được đưa về mono 16 kHz (downmix của FFmpeg) |
 | `model` | Bắt buộc; thiếu → 400 `missing_required_parameter`; không phục vụ → 404 `model_not_found` (`param: "model"`) |
 | `language` | Không gửi hoặc `vi`; khác → 400 `unsupported_language`. Không gửi **không** có nghĩa là auto-detect |
 | `temperature` | Không gửi hoặc `0` (decode tất định, greedy); khác → 400 `unsupported_parameter` |

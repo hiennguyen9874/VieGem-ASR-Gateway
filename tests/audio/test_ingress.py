@@ -4,6 +4,7 @@ field flooding, malformed forms, spool budget, and temp-file cleanup on success,
 A test-only route runs the same ingress + decode path the transcription endpoint (M3) uses.
 """
 
+import errno
 import socket
 import threading
 import time
@@ -85,6 +86,19 @@ def multipart(parts: list[tuple[str, bytes, str | None]], boundary: str = "b0und
 
 
 MP_HEADERS = {"Content-Type": "multipart/form-data; boundary=b0undary"}
+
+
+@pytest.mark.parametrize("target", ["app.audio.tempfile.mkstemp", "app.audio.os.write"])
+@pytest.mark.parametrize("error_number", [errno.ENOSPC, errno.EDQUOT])
+def test_disk_exhaustion_returns_busy_and_cleans_up(monkeypatch, target, error_number):
+    def full(*args, **kwargs):
+        raise OSError(error_number, "Disk capacity exhausted")
+
+    with serve() as (client, app, _):
+        monkeypatch.setattr(target, full)
+        response = client.post("/v1/_ingest", files={"file": ("audio.wav", WAV)})
+        error(response, 429, "server_busy")
+        assert spool_empty(app)
 
 
 def test_upload_fields_and_decode():

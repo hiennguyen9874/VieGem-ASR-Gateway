@@ -19,6 +19,7 @@ Upload and decode both stop at the request `deadline` (time.monotonic), the budg
 """
 
 import asyncio
+import errno
 import logging
 import os
 import shutil
@@ -164,7 +165,12 @@ class AudioIngress:
     def _new_spool_file(self) -> tuple[int, Path]:
         if self._spool_dir is None:
             raise RuntimeError("AudioIngress not started")
-        fd, name = tempfile.mkstemp(prefix="upload-", dir=self._spool_dir)  # server-generated name, mode 0600
+        try:
+            fd, name = tempfile.mkstemp(prefix="upload-", dir=self._spool_dir)  # server-generated name, mode 0600
+        except OSError as e:
+            if e.errno in (errno.ENOSPC, errno.EDQUOT):
+                raise server_busy(retry_after=1) from None
+            raise
         return fd, Path(name)
 
     # -- decode ----------------------------------------------------------------------------------------------------
@@ -253,8 +259,17 @@ class AudioIngress:
             if proc.returncode is None:
                 with suppress(ProcessLookupError):
                     proc.kill()
-                # Reap even if this task is cancelled again; no zombie or orphan decoder is left behind.
-                await asyncio.shield(proc.wait())
+                # Keep the decode slot until reaping finishes, even across repeated cancellation.
+                reaper = asyncio.create_task(proc.wait())
+                cancelled = False
+                while not reaper.done():
+                    try:
+                        await asyncio.shield(reaper)
+                    except asyncio.CancelledError:
+                        cancelled = True
+                reaper.result()
+                if cancelled:
+                    raise asyncio.CancelledError
 
         if too_long:
             raise audio_too_long(self._max_audio_seconds)
@@ -359,7 +374,13 @@ class _FormState:
             self._reserved += n
             self.file_size += n
             # Synchronous write of one body chunk (<= ~64 KiB) into the page cache; no fd outlives `close()`.
-            _write_all(self._fd, memoryview(data)[start:end])
+            try:
+                _write_all(self._fd, memoryview(data)[start:end])
+            except OSError as e:
+                if e.errno in (errno.ENOSPC, errno.EDQUOT):
+                    self._fail(server_busy(retry_after=1))
+                    return
+                raise
         else:
             if len(self._value) + n > MAX_FIELD_BYTES:
                 self._fail(request_too_large(MAX_FIELD_BYTES, what="Form field"))
