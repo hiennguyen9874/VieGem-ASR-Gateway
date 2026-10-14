@@ -1,7 +1,7 @@
 # Deploy QUAN-Transcribe-1.0
 
 - Design: docs/deployment-design.vi.md
-- Plan: docs/implementation-plan.vi.md (M0 done)
+- Plan: docs/implementation-plan.vi.md (M1 done)
 - Baseline (M0 results, pins, measurements): docs/baseline.vi.md
 - API contract (pinned OpenAI SDK profile, payloads, error codes): docs/api-contract.vi.md
 
