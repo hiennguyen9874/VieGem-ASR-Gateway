@@ -6,7 +6,11 @@ import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import OpenAI, { toFile } from 'openai';
 import type { Model } from 'openai/resources/models';
-import type { Transcription, TranscriptionStreamEvent } from 'openai/resources/audio/transcriptions';
+import type {
+  Transcription,
+  TranscriptionStreamEvent,
+  TranscriptionVerbose,
+} from 'openai/resources/audio/transcriptions';
 import type { RealtimeClientEvent, RealtimeServerEvent } from 'openai/resources/realtime/realtime';
 
 const dir = new URL('../examples/', import.meta.url);
@@ -16,6 +20,21 @@ const jsonl = (name: string) =>
 const MODEL = 'quan-transcribe-1.0';
 
 const model = { id: MODEL, object: 'model', created: 1791950390, owned_by: 'qnguyen3' } satisfies Model;
+
+const TEXT =
+  'các sản phẩm thủ công có thể được coi là độ cổ mặc dù tuổi đời của chúng ch trẻ hơn rất nhiều các sản phẩm tương tự được sản xuất hàng loạt';
+const verbose = {
+  text: TEXT,
+  language: 'vietnamese',
+  duration: 8.88,
+  usage: { type: 'duration', seconds: 8.88 },
+} satisfies TranscriptionVerbose;
+// R2b shape (served only after the alignment gate): `words` without `segments`.
+const firstWords = [
+  { word: 'các', start: 1.18, end: 1.22 },
+  { word: 'sản', start: 1.38, end: 1.42 },
+];
+const verboseWords = { ...verbose, words: firstWords } satisfies TranscriptionVerbose;
 
 const session = {
   type: 'transcription',
@@ -114,6 +133,11 @@ test('typed copies equal the shared example files', () => {
   assert.deepEqual(serverEvents, jsonl('realtime_server.jsonl'));
   const t: Transcription = JSON.parse(read('transcription.json').toString());
   assert.equal(t.usage?.type, 'duration');
+  assert.deepEqual(verbose, JSON.parse(read('transcription_verbose.json').toString()));
+  const words: TranscriptionVerbose = JSON.parse(read('transcription_verbose_words.json').toString());
+  assert.deepEqual({ ...words, words: words.words?.slice(0, 2) }, verboseWords);
+  assert.equal(words.words?.map((w) => w.word).join(' '), words.text);
+  assert.equal(t.text, TEXT);
 });
 
 // What the SDK handed to fetch(); multipart bodies arrive as a native FormData.
@@ -155,6 +179,25 @@ test('json and text transcription', async () => {
     { file: await audio(), model: MODEL, response_format: 'text' },
   );
   assert.equal(text, read('transcription.txt').toString('utf8'));
+});
+
+test('verbose_json and subtitles', async () => {
+  const v = await client(200, read('transcription_verbose.json'), 'application/json').audio.transcriptions.create({
+    file: await audio(),
+    model: MODEL,
+    response_format: 'verbose_json',
+  });
+  assert.equal(v.segments, undefined);
+  assert.deepEqual(v, verbose);
+  for (const fmt of ['srt', 'vtt'] as const) {
+    const body = read(`transcription.${fmt}`);
+    const got: string = await client(200, body, 'text/plain; charset=utf-8').audio.transcriptions.create({
+      file: await audio(),
+      model: MODEL,
+      response_format: fmt,
+    });
+    assert.equal(got, body.toString('utf8'));
+  }
 });
 
 test('array fields are sent as repeated bracket fields', async () => {

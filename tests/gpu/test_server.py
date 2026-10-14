@@ -1,5 +1,7 @@
 """The real app on a GPU over a real Uvicorn server: transcripts through the HTTP API equal the offline baseline,
-JSON/text/SSE agree, concurrent requests do not mix, the long fixture stays within the M2 WER bound, silence -> "".
+every response format carries the same text, concurrent requests do not mix, the long fixture stays within the M2 WER
+bound, silence -> "". R2a gate: SRT/VTT cues never enter known digital-zero gaps and end/start close to them, across a
+chunk boundary.
 
 Needs a CUDA GPU, staged assets and ffmpeg: CUDA_VISIBLE_DEVICES=<id> uv run pytest tests/gpu
 """
@@ -10,12 +12,14 @@ import subprocess
 import threading
 from pathlib import Path
 
+import numpy as np
 import pytest
+import soundfile as sf
 import torch
 
 from app.engine import QuanEngine
 from scripts.smoke_inference import wer
-from tests.live_server import serve
+from tests.live_server import SR, parse_cues, serve, wav_file
 
 ROOT = Path(__file__).resolve().parents[2]
 MODELS = Path(os.environ.get("QUAN_MODELS_DIR", ROOT / "models"))
@@ -50,6 +54,10 @@ def stream(srv, path: Path) -> tuple[list[str], str]:
     return [e["delta"] for e in events[:-1]], events[-1]["text"]
 
 
+def timed(srv, path: Path, fmt: str) -> list[tuple[float, float, str]]:
+    return parse_cues(post(srv, path, response_format=fmt).text, fmt)
+
+
 def test_transcripts_match_baseline_in_every_format(srv):
     baseline = json.loads((ROOT / "docs/baseline/offline.json").read_text())["results"]
     for name in ("vi_a.wav", "vi_b.wav", "silence_2s.wav", "short_200ms.wav"):
@@ -59,7 +67,40 @@ def test_transcripts_match_baseline_in_every_format(srv):
         assert post(srv, path, response_format="text").text == body["text"]
         deltas, done = stream(srv, path)
         assert "".join(deltas) == done == body["text"]
+        verbose = post(srv, path, response_format="verbose_json").json()
+        assert verbose == {"text": body["text"], "language": "vietnamese", "duration": body["usage"]["seconds"],
+                           "usage": body["usage"]}
+        for fmt in ("srt", "vtt"):
+            assert " ".join(c[2] for c in timed(srv, path, fmt)) == body["text"], (name, fmt)
     assert stream(srv, FIXTURES / "silence_2s.wav") == ([], "")
+    assert timed(srv, FIXTURES / "silence_2s.wav", "srt") == []
+
+
+GAP_TOLERANCE_S = 1.5  # docs/m4-design.vi.md §2.1: cue edges measured within 1.16 s of a zero gap (clip silence)
+
+
+def test_cues_respect_known_silences_across_a_chunk_boundary(srv, tmp_path):
+    """R2a gate on vi_a | 1 s | vi_b | 1 s | vi_a | 1 s | vi_b (37.7 s: two chunks, cut inside the last gap)."""
+    a, b = (sf.read(FIXTURES / n, dtype="float32")[0] for n in ("vi_a.wav", "vi_b.wav"))
+    gap = np.zeros(SR, np.float32)
+    parts = [a, gap, b, gap, a, gap, b]
+    edges = np.cumsum([0] + [len(p) for p in parts]) / SR
+    gaps = [(edges[i], edges[i + 1]) for i in (1, 3, 5)]
+    path = wav_file(tmp_path / "composite.wav", np.concatenate(parts))
+    text = post(srv, path).json()["text"]
+    duration = edges[-1]
+    for fmt in ("srt", "vtt"):
+        cues = timed(srv, path, fmt)
+        assert " ".join(c[2] for c in cues) == text
+        assert all(0 <= s < e <= duration for s, e, _ in cues)
+        assert all(p[1] <= n[0] for p, n in zip(cues, cues[1:]))
+        for g0, g1 in gaps:
+            before = [c for c in cues if c[0] < g0]
+            after = [c for c in cues if c[0] >= g0]
+            assert before and after
+            # Nothing inside the gap (times are whole ms), and the cue edges are close to it.
+            assert g0 - GAP_TOLERANCE_S <= before[-1][1] <= g0 + 0.0005, (fmt, g0, before[-1])
+            assert g1 - 0.0005 <= after[0][0] <= g1 + GAP_TOLERANCE_S, (fmt, g1, after[0])
 
 
 def test_concurrent_requests_do_not_mix(srv):
@@ -87,3 +128,5 @@ def test_long_m4a_within_wer_bound(srv, tmp_path):
     assert len(deltas) == 4  # 106.6 s at <= 30 s per chunk, none empty
     assert done == post(srv, m4a).json()["text"]
     assert wer(ref, done) <= 0.10
+    cues = timed(srv, m4a, "srt")
+    assert " ".join(c[2] for c in cues) == done and all(p[1] <= n[0] for p, n in zip(cues, cues[1:]))

@@ -86,6 +86,52 @@ def test_text_transcription_returns_body_verbatim():
     assert t == example("transcription.txt").decode()
 
 
+def test_verbose_json_parses_without_segments():
+    raw = json.loads(example("transcription_verbose.json"))
+    c = client_with(200, example("transcription_verbose.json"), "application/json", [])
+    with FIXTURE.open("rb") as f:
+        t = c.audio.transcriptions.create(file=f, model=MODEL, response_format="verbose_json")
+    assert isinstance(t, openai.types.audio.TranscriptionVerbose)
+    assert t.model_dump(exclude_unset=True) == raw  # no field dropped or renamed
+    assert (t.language, t.duration, t.usage.seconds) == ("vietnamese", 8.88, 8.88)
+    assert t.segments is None and t.words is None
+
+
+def test_verbose_json_words_shape_parses():
+    """R2b payload shape (served only after the alignment gate)."""
+    raw = json.loads(example("transcription_verbose_words.json"))
+    c = client_with(200, example("transcription_verbose_words.json"), "application/json", [])
+    with FIXTURE.open("rb") as f:
+        t = c.audio.transcriptions.create(file=f, model=MODEL, response_format="verbose_json",
+                                          timestamp_granularities=["word"])
+    assert t.model_dump(exclude_unset=True) == raw
+    assert " ".join(w.word for w in t.words) == t.text
+    assert all(0 <= w.start < w.end <= t.duration for w in t.words)
+    assert all(a.end <= b.start for a, b in zip(t.words, t.words[1:]))
+
+
+@pytest.mark.parametrize("fmt", ["srt", "vtt"])
+def test_subtitles_are_returned_verbatim(fmt):
+    from tests.live_server import parse_cues
+
+    body = example(f"transcription.{fmt}").decode()
+    c = client_with(200, body.encode(), "text/plain; charset=utf-8", [])
+    with FIXTURE.open("rb") as f:
+        assert c.audio.transcriptions.create(file=f, model=MODEL, response_format=fmt) == body
+    cues = parse_cues(body, fmt)
+    assert all(a < b for a, b, _ in cues) and all(p[1] <= n[0] for p, n in zip(cues, cues[1:]))
+
+
+def test_every_format_example_has_the_same_text():
+    from tests.live_server import parse_cues
+
+    text = json.loads(example("transcription.json"))["text"]
+    assert example("transcription.txt").decode() == text
+    assert json.loads(example("transcription_verbose.json"))["text"] == text
+    for fmt in ("srt", "vtt"):
+        assert " ".join(c[2] for c in parse_cues(example(f"transcription.{fmt}").decode(), fmt)) == text
+
+
 def test_array_fields_are_sent_as_repeated_bracket_fields():
     """The gateway must parse `include[]` / `timestamp_granularities[]` (repeated), not `include`."""
     seen = []
@@ -160,6 +206,7 @@ def test_service_examples_match_gateway_errors():
         errors.model_not_found("unknown"), errors.not_found(),
         errors.APIError(405, "invalid_request_error", "method_not_allowed", "Method not allowed."),
         errors.request_too_large(1024), errors.request_too_large(8192, what="Form field"), errors.server_busy(1), errors.inference_failed(),
+        errors.alignment_failed(),
         errors.internal_error(), errors.model_not_ready(), errors.shutting_down(), errors.request_timeout(),
     ]
     assert [{"status": e.status, "headers": e.headers, **e.body()} for e in actual] == json.loads(

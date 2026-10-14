@@ -77,14 +77,14 @@ def test_decoded_and_chunked_audio_transcribes_like_the_baseline(tmp_path):
             texts = []
             async with scheduler.open_lane(JobKind.FILE) as lane:
                 for s in spans:
-                    texts.append(await (await lane.submit(wav[s.start:s.end])))
+                    texts.append((await (await lane.submit(wav[s.start:s.end]))).text)
             return " ".join(t for t in texts if t), len(spans)
 
         try:
             out = {name: await transcribe(path) for name, path in inputs.items()}
             async with scheduler.open_lane(JobKind.FILE) as lane:
                 tiny = np.zeros(MIN_AUDIO_SAMPLES + 1, np.float32)
-                out["min_chunk"] = (await (await lane.submit(tiny)), 1)
+                out["min_chunk"] = ((await (await lane.submit(tiny))).text, 1)
             return out
         finally:
             assert await scheduler.close(30)

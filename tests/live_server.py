@@ -22,6 +22,7 @@ from app.engine import Engine
 from app.main import create_app
 from app.transcription import Joiner
 from tests.fake_engine import FakeEngine, config
+from scripts.subtitles import parse_cues as _parse_cues
 
 KEY = "test-key-0123456789"
 AUTH = {"Authorization": f"Bearer {KEY}"}
@@ -48,6 +49,13 @@ def expected_deltas(x: np.ndarray, max_chunk_seconds: float) -> list[str]:
     """SSE deltas the server sends for `x` with the `name` text_fn (empty chunks never occur with noise)."""
     j = Joiner()
     return [j.add(name(x[s.start:s.end])) for s in split(x, int(max_chunk_seconds * SR))]
+
+
+def parse_cues(body: str, fmt: str) -> list[tuple[float, float, str]]:
+    """Strictly parse a gateway SRT/VTT body into (start s, end s, text) cues."""
+    cues = _parse_cues(body, fmt)
+    assert cues is not None, body
+    return cues
 
 
 def wait_for(predicate, timeout: float = 5.0) -> None:

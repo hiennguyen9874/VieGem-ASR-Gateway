@@ -2,7 +2,8 @@
 
 Thiết kế: [deployment-design.vi.md](deployment-design.vi.md). Baseline: [baseline.vi.md](baseline.vi.md).
 
-Tài liệu này chốt payload cho R1 (REST/SSE) và R3a (Realtime explicit commit). Mọi ví dụ nằm trong
+Tài liệu này chốt payload cho R1 (REST/SSE), R2a (`verbose_json`/`srt`/`vtt`, [m4-design.vi.md](m4-design.vi.md)) và
+R3a (Realtime explicit commit). Mọi ví dụ nằm trong
 `tests/contract/examples/` và được **parse bằng SDK thật** (`tests/contract/test_python_sdk.py`,
 `tests/contract/js/contract.test.ts`). Nếu tài liệu và ví dụ khác nhau thì ví dụ + test là chuẩn.
 
@@ -24,8 +25,9 @@ tài liệu OpenAI, không phải traffic quan sát được. Mã lỗi `code` b
 | `GET /v1/models`, `GET /v1/models/{id}` | Hỗ trợ | R1 |
 | `POST /v1/audio/transcriptions` `response_format=json\|text` | Hỗ trợ | R1 |
 | `stream=true` (SSE delta/done) | Hỗ trợ | R1 |
-| `verbose_json`, `srt`, `vtt`, `timestamp_granularities[]=segment` | 400 `unsupported_response_format`/`unsupported_parameter` cho tới R2 | R2 |
-| `timestamp_granularities[]=word` | 400 cho tới khi qua alignment gate | R2 (riêng) |
+| `response_format=verbose_json\|srt\|vtt` (không stream) | Hỗ trợ | R2a |
+| `timestamp_granularities[]=segment` | 400 `unsupported_parameter`: `TranscriptionSegment` cần field chỉ Whisper có; segment chỉ có qua `srt`/`vtt` | — |
+| `timestamp_granularities[]=word` | 400 `unsupported_parameter` cho tới khi qua alignment gate (m4-design §7) | R2b |
 | WS `/v1/realtime` transcription, `turn_detection: null`, append/commit/clear | Hỗ trợ | R3a |
 | `server_vad` | 400 `unsupported_turn_detection` | R3b |
 | `semantic_vad`, `noise_reduction`, `audio/pcmu`, `audio/pcma` | Từ chối | — |
@@ -53,16 +55,18 @@ Auth: `Authorization: Bearer <key>`. Body `multipart/form-data`.
 | `language` | Không gửi hoặc `vi`; khác → 400 `unsupported_language`. Không gửi **không** có nghĩa là auto-detect |
 | `temperature` | Không gửi hoặc số bằng 0 (`0`, `0.0`, `-0`; decode tất định, greedy). Không phải số hữu hạn (rỗng, `abc`, `nan`, `inf`) → 400 `invalid_value`; số khác 0 → 400 `unsupported_parameter` |
 | `prompt` | Không gửi hoặc rỗng; khác → 400 `unsupported_parameter` |
-| `response_format` | `json` (mặc định), `text`; R2 thêm `verbose_json`/`srt`/`vtt`; khác → 400 `unsupported_response_format` |
-| `stream` | Đúng chuỗi `true` hoặc `false` (cả hai SDK gửi như vậy); giá trị khác (`True`, `1`, rỗng) → 400 `invalid_value`. `true` với `response_format` không gửi, `json` hoặc `text` → SSE (§5); R2: với format khác → 400 `unsupported_parameter` (`param: "stream"`; ở R1 format khác đã bị từ chối trước) |
-| `include[]`, `timestamp_granularities[]` | Field lặp, tên **có** `[]` (đã xác minh cả hai SDK gửi như vậy). R1: bất kỳ giá trị nào → 400 `unsupported_parameter` |
+| `response_format` | `json` (mặc định), `text`, `verbose_json`, `srt`, `vtt`; khác → 400 `unsupported_response_format` |
+| `stream` | Đúng chuỗi `true` hoặc `false` (cả hai SDK gửi như vậy); giá trị khác (`True`, `1`, rỗng) → 400 `invalid_value`. `true` với `response_format` không gửi, `json` hoặc `text` → SSE (§5); với `verbose_json`/`srt`/`vtt` → 400 `unsupported_parameter` (`param: "stream"`) |
+| `include[]` | Field lặp, tên **có** `[]` (đã xác minh cả hai SDK gửi như vậy). Bất kỳ giá trị nào → 400 `unsupported_parameter` |
+| `timestamp_granularities[]` | Field lặp, tên có `[]`; giá trị lặp được gộp. Giá trị ngoài {`word`, `segment`} → 400 `invalid_value`; có granularity mà format ≠ `verbose_json` → 400 `unsupported_parameter`; `segment` → 400 `unsupported_parameter`; `word` → 400 `unsupported_parameter` cho tới R2b (`param` đều là `timestamp_granularities[]`) |
 | Field khác (kể cả `chunking_strategy`, `known_speaker_names[]`, `include` không có `[]`) | 400 `unsupported_parameter` (`param` = tên field, cắt 64 ký tự). Không âm thầm bỏ qua |
 
 Mọi field trừ `file`, `include[]`, `timestamp_granularities[]` chỉ được gửi một lần; lặp → 400 `invalid_value`
 (`param` = tên). Thứ tự kiểm tra cố định, trả lỗi đầu tiên (`app/transcription.py:parse_params`, test
 `tests/unit/test_transcription_params.py`): (1) field lạ theo thứ tự gửi, (2) field lặp, (3) thiếu/rỗng `model`,
-(4) `include[]`, (5) `timestamp_granularities[]`, (6) `language`, (7) `temperature`, (8) `prompt`,
-(9) `response_format`, (10) `stream`, (11) model không phục vụ (404). Multipart/`file` được kiểm tra trước tất cả
+(4) `include[]`, (5) giá trị `timestamp_granularities[]`, (6) `language`, (7) `temperature`, (8) `prompt`,
+(9) `response_format`, (10) `stream` (giá trị, rồi format stream được), (11) granularity chỉ với `verbose_json`,
+(12) `segment`, `word` chưa bật, (13) model không phục vụ (404). Multipart/`file` được kiểm tra trước tất cả
 (§4 giới hạn), decode audio sau tất cả.
 
 Kết quả:
@@ -71,10 +75,29 @@ Kết quả:
   `usage.seconds` = số mẫu audio sau decode / sample rate gốc (tính trước chunking), là đại lượng đo được.
   Không có `logprobs`/`languages`. Ví dụ `examples/transcription.json`.
 - `text` → `200 text/plain; charset=utf-8`, body đúng bằng transcript, không thêm newline. SDK trả nguyên body.
+- `verbose_json` → `200 application/json`: `{"text", "language": "vietnamese", "duration", "usage": {"type":
+  "duration", "seconds"}}`, `duration == usage.seconds`. **Không có `segments`** (schema SDK bắt buộc
+  `avg_logprob`, `no_speech_prob`, `compression_ratio`, `tokens` kiểu Whisper — QUAN không có dữ liệu thật) và
+  không có `words` cho tới R2b. Ví dụ `examples/transcription_verbose.json`; dạng R2b (có `words`, chưa phục vụ):
+  `examples/transcription_verbose_words.json`.
+- `srt` → `200 text/plain; charset=utf-8`: cue `n\nHH:MM:SS,mmm --> HH:MM:SS,mmm\ntext\n\n`, đánh số từ 1; không có
+  cue → body rỗng. `vtt` → cùng content type, `WEBVTT\n\n` rồi `HH:MM:SS.mmm --> HH:MM:SS.mmm\ntext\n\n`; không có
+  cue → chỉ header. Cả hai SDK trả nguyên body (string). Ví dụ `examples/transcription.srt`, `examples/transcription.vtt`.
+- Timestamps (`srt`/`vtt`, sau này `words`): lấy từ đường CTC greedy của chính lần inference sinh ra text, cộng offset
+  tuyệt đối của chunk; không chạy thêm GPU. **Từ** = dãy ký tự không phải khoảng trắng của transcript (âm tiết tiếng
+  Việt, không phải từ ghép); thời gian của từ = các frame 40 ms mà model phát unit của nó (spike, thường 1 frame,
+  nằm trong/cuối âm tiết), nên start của cue có thể trễ ~1 âm tiết so với lúc bắt đầu nói (đo: m4-design §2.1).
+  Cue mới khi khoảng lặng giữa hai từ ≥ 0.5 s, hoặc khi thêm từ sẽ làm cue dài > 7 s hay > 80 ký tự.
+  Ngoại lệ: một từ tự nó vượt giới hạn được giữ nguyên trong cue riêng, không cắt từ. Giờ SRT/VTT là
+  ms nguyên làm tròn; cue có thứ tự, không chồng nhau, nằm trong `[0, duration]`. Một từ bị điểm cắt chunk chia đôi
+  (hiếm, chỉ khi 5 s cuối trước giới hạn không có điểm lặng) thành hai từ, nhất quán với text.
+- Mọi format cho cùng transcript: `json.text == text == verbose_json.text == SSE done.text ==` các text cue nối bằng
+  một dấu cách. Nếu đường CTC không khớp transcript, `srt`/`vtt` trả 500 `alignment_failed` (không bao giờ chia đều
+  thời gian); `json`/`text`/`verbose_json`/SSE không chạy alignment nên không bị ảnh hưởng.
 - Text: chữ thường tiếng Việt, không dấu câu, số viết bằng chữ (output nguyên bản của model). Nhiều chunk nối bằng
   một dấu cách; chunk rỗng không sinh dấu cách.
 - Silence/clip ngắn (chốt ở M2, `app/chunking.py`): audio decode hợp lệ nhưng ≤ 1,600 mẫu ở 16 kHz (≤ 100 ms), kể
-  cả 0 mẫu → `text: ""`, không gọi model (frontend crash dưới 161 mẫu; xem baseline §7). Silence dài vẫn qua model
+  cả 0 mẫu → `text: ""` (`verbose_json` với `duration` thật, `srt` rỗng, `vtt` chỉ header), không gọi model (frontend crash dưới 161 mẫu; xem baseline §7). Silence dài vẫn qua model
   và cho `""` (đã đo), không dùng ngưỡng biên độ.
 - Chunking: audio dài hơn `QUAN_MAX_CHUNK_SECONDS` (mặc định 30 s) được cắt tại điểm yên lặng nhất trong 5 s cuối
   trước giới hạn; các chunk phủ liền toàn bộ audio (không bỏ silence, không bỏ đuôi), mỗi chunk > 100 ms. Text có
@@ -184,7 +207,7 @@ Envelope (ví dụ `examples/error.json`):
 | 405 | `invalid_request_error` | `method_not_allowed` |
 | 413 | `invalid_request_error` | `request_too_large` (body vượt giới hạn, kiểm tra trước multipart parse; hoặc một form field vượt 8 KiB) |
 | 429 | `rate_limit_error` | `server_busy` (queue/concurrency/decode slot/spool disk/budget audio đã decode đầy); kèm `Retry-After` khi có ước lượng |
-| 500 | `server_error` | `inference_failed`, `internal_error` (lỗi không lường trước, không lộ chi tiết) |
+| 500 | `server_error` | `inference_failed`, `alignment_failed` (`srt`/`vtt`: đường CTC không khớp transcript), `internal_error` (lỗi không lường trước, không lộ chi tiết) |
 | 503 | `server_error` | `model_not_ready` (đang load/recover, `Retry-After: 5`), `shutting_down` (đang drain), `request_timeout` (hết budget tổng của request ở upload, decode, chờ queue hoặc đang chạy; call đang chạy vẫn giữ worker/budget tới khi kết thúc) |
 
 Mọi response (kể cả lỗi) có header `x-request-id: req_…`; Python SDK đưa giá trị này vào `request_id` của exception; JS SDK dùng `requestID`.

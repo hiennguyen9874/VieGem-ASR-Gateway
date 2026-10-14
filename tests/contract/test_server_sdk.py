@@ -18,7 +18,7 @@ import pytest
 from app.chunking import split
 from app.transcription import MODEL_ID
 from tests.fake_engine import FakeEngine
-from tests.live_server import KEY, SR, expected_deltas, name, noise, serve, wait_for, wav_file
+from tests.live_server import KEY, SR, expected_deltas, name, noise, parse_cues, serve, wait_for, wav_file
 
 EXAMPLES = Path(__file__).parent / "examples"
 JS = Path(__file__).parent / "js"
@@ -83,6 +83,13 @@ def test_payloads_match_examples(srv, audio):
     r = post(srv, audio / "speech.wav", response_format="text")
     assert r.headers["content-type"] == "text/plain; charset=utf-8" and r.text == body["text"]
     assert not r.text.endswith("\n")
+    verbose = post(srv, audio / "speech.wav", response_format="verbose_json").json()
+    assert shape(verbose) == shape(json.loads((EXAMPLES / "transcription_verbose.json").read_text()))
+    assert verbose["text"] == body["text"] and verbose["duration"] == body["usage"]["seconds"]
+    for fmt in ("srt", "vtt"):
+        r = post(srv, audio / "speech.wav", response_format=fmt)
+        assert r.headers["content-type"] == "text/plain; charset=utf-8"
+        assert " ".join(c[2] for c in parse_cues(r.text, fmt)) == body["text"]
 
     delta, _, done = map(shape, example_events("transcription_stream.sse"))
     got = sse(post(srv, audio / "speech.wav", stream="true"))
@@ -107,6 +114,20 @@ def test_python_sdk(srv, audio):
     assert isinstance(t, openai.types.audio.Transcription)
     assert t.model_dump(exclude_none=True) == {"text": expected["text"],
                                                "usage": {"type": "duration", "seconds": expected["seconds"]}}
+    with (audio / "speech.wav").open("rb") as f:
+        v = c.audio.transcriptions.create(file=f, model=MODEL_ID, response_format="verbose_json")
+    assert isinstance(v, openai.types.audio.TranscriptionVerbose)
+    assert v.model_dump(exclude_none=True) == {"text": expected["text"], "language": "vietnamese",
+                                               "duration": expected["seconds"],
+                                               "usage": {"type": "duration", "seconds": expected["seconds"]}}
+    for fmt in ("srt", "vtt"):
+        with (audio / "speech.wav").open("rb") as f:
+            body = c.audio.transcriptions.create(file=f, model=MODEL_ID, response_format=fmt)
+        assert isinstance(body, str) and " ".join(t for _, _, t in parse_cues(body, fmt)) == expected["text"]
+    with pytest.raises(openai.BadRequestError) as e, (audio / "speech.wav").open("rb") as f:
+        c.audio.transcriptions.create(file=f, model=MODEL_ID, response_format="verbose_json",
+                                      timestamp_granularities=["segment"])
+    assert (e.value.code, e.value.param) == ("unsupported_parameter", "timestamp_granularities[]")
     with (audio / "speech.wav").open("rb") as f:
         events = list(c.audio.transcriptions.create(file=f, model=MODEL_ID, stream=True))
     assert [e.delta for e in events[:-1]] == expected["deltas"] and events[-1].text == expected["text"]

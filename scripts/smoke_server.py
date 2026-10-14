@@ -1,11 +1,12 @@
-"""Smoke test of a running gateway (local process or container): readiness, models, json/text/SSE on the fixtures,
-transcripts compared with the offline inference baseline, timings -> JSON report.
+"""Smoke test of a running gateway (local process or container): readiness, models, json/text/SSE and
+verbose_json/srt/vtt on the fixtures, transcripts compared with the offline inference baseline, timings -> JSON report.
 
     OPENAI_API_KEY=<gateway key> uv run scripts/smoke_server.py --base-url http://127.0.0.1:18000 \
         --out docs/baseline/server.json
 
 Standard library only, so it runs from the host against a container port as well. Checks (exit 1 if one fails):
-- every fixture: json text == text body == "".join(SSE deltas) == SSE done text; usage.seconds == samples / 16 kHz;
+- every fixture: json text == text body == "".join(SSE deltas) == SSE done text == verbose_json text == SRT/VTT cue
+  texts joined by spaces; usage.seconds == verbose_json duration == samples / 16 kHz; cues ordered, inside the audio;
 - fixtures of one chunk (<= QUAN_MAX_CHUNK_SECONDS, 16 kHz WAV decodes bit-exactly): text == docs/baseline/offline.json
   (same greedy decoder, same model); silence and the 200 ms clip -> "";
 - fixtures-large/vi_long.wav, if present: WER against the FLEURS reference <= 0.10 (the server's quiet-point chunking
@@ -27,14 +28,13 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from scripts.scoring import wer
+from scripts.subtitles import parse_cues
 
 FIXTURES = ROOT / "tests/fixtures"
 LONG = ROOT / "fixtures-large/vi_long.wav"
 MODEL = "quan-transcribe-1.0"
 LONG_MAX_WER = 0.10
 SMALL = ("vi_a.wav", "vi_b.wav", "silence_2s.wav", "short_200ms.wav")
-
-
 class Gateway:
     def __init__(self, base_url: str, api_key: str, timeout: float):
         self.base, self.key, self.timeout = base_url.rstrip("/"), api_key, timeout
@@ -100,12 +100,23 @@ def run_fixture(gw: Gateway, audio: bytes) -> dict:
             elif event["type"] == "transcript.text.done":
                 done = event["text"]
     t3 = time.monotonic()
+    with gw.transcribe(audio, response_format="verbose_json") as r:
+        verbose = json.load(r)
+    t4 = time.monotonic()
+    timed = {}
+    for fmt in ("srt", "vtt"):
+        with gw.transcribe(audio, response_format=fmt) as r:
+            timed[fmt] = (r.headers["content-type"], parse_cues(r.read().decode(), fmt))
+    t5 = time.monotonic()
     return {
         "text": body["text"], "usage": body["usage"], "text_body": text, "text_content_type": text_type,
         "sse_content_type": sse_type, "deltas": len(deltas), "sse_joined": "".join(deltas), "sse_done": done,
-        "sse_errors": errors,
+        "sse_errors": errors, "verbose": verbose,
+        "cue_content_types": {f: t for f, (t, _) in timed.items()},
+        "cues": {f: c for f, (_, c) in timed.items()},
         "timings_s": {"json": round(t1 - t0, 3), "text": round(t2 - t1, 3), "sse_total": round(t3 - t2, 3),
-                      "sse_first_event": round((first or t3) - t2, 3)},
+                      "sse_first_event": round((first or t3) - t2, 3), "verbose_json": round(t4 - t3, 3),
+                      "srt_vtt": round(t5 - t4, 3)},
     }
 
 
@@ -155,6 +166,17 @@ def main() -> int:
             failures.append(f"{name}: json/text/SSE disagree or SSE error {res['sse_errors']}")
         if res["usage"] != {"type": "duration", "seconds": res["audio_s"]}:
             failures.append(f"{name}: usage {res['usage']}")
+        if res["verbose"] != {"text": res["text"], "language": "vietnamese", "duration": res["audio_s"],
+                              "usage": res["usage"]}:
+            failures.append(f"{name}: verbose_json disagrees with json")
+        for fmt, cues in res["cues"].items():
+            if (cues is None or " ".join(c[2] for c in cues) != res["text"]
+                    or not all(0 <= a < b <= res["audio_s"] + 0.0005 for a, b, _ in cues)
+                    or not all(p[1] <= n[0] for p, n in zip(cues, cues[1:]))
+                    or res["cue_content_types"][fmt] != "text/plain; charset=utf-8"):
+                failures.append(f"{name}: {fmt} malformed, unordered or disagrees with json")
+        res["cues"] = {f: len(c or []) for f, c in res["cues"].items()}  # counts only in the report
+        del res["verbose"]
         if res["text_content_type"] != "text/plain; charset=utf-8" or not res["sse_content_type"].startswith(
                 "text/event-stream"):
             failures.append(f"{name}: content types")

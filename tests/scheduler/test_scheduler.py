@@ -70,8 +70,8 @@ async def transcribe_all(scheduler: Scheduler, kind: JobKind, values: list[int])
         results = []
         for v in values[1:]:
             pending.append(await lane.submit(wav(v)))  # waits while the lane quota is full
-            results.append(await pending.pop(0))
-        results += [await j for j in pending]
+            results.append((await pending.pop(0)).text)
+        results += [(await j).text for j in pending]
         return results
 
 
@@ -104,7 +104,7 @@ async def test_timed_out_caller_does_not_free_the_worker():
         assert engine.calls == [1] and engine.active == 1, "second inference started while first still runs"
         assert scheduler._jobs == 2  # the running job still holds its budget
         engine.gate.set()
-        assert await job_b == "2"
+        assert (await job_b).text == "2"
         assert engine.max_active == 1
         assert jobs(metrics, "discarded") == 1
         assert worker.ready
@@ -156,8 +156,8 @@ async def test_buffered_samples_bound_and_waiting_submit_admitted_when_capacity_
         await asyncio.sleep(0.1)
         assert not submit_b.done() and scheduler._samples == 10000
         engine.gate.set()
-        assert await job_a == "1"
-        assert await (await submit_b) == "2"
+        assert (await job_a).text == "1"
+        assert (await (await submit_b)).text == "2"
         with pytest.raises(ValueError):
             await a.submit(wav(3, 16001))  # larger than the whole budget: caller must chunk
 
@@ -174,7 +174,7 @@ async def test_lane_quota_backpressure_does_not_enqueue_whole_file():
         await asyncio.sleep(0.1)
         assert not third.done() and lane.unfinished == 2
         engine.gate.set()
-        assert await (await third) == "3"
+        assert (await (await third)).text == "3"
 
 
 @run_async
@@ -225,9 +225,9 @@ async def test_cancel_queued_job_frees_budget_and_never_runs():
         await wait_until(lambda: scheduler._jobs == 1 and scheduler._samples == 1600)
         assert lane.unfinished == 1
         engine.gate.set()
-        assert await running == "1"
+        assert (await running).text == "1"
         follow_up = await lane.submit(wav(4))
-        assert await follow_up == "4"
+        assert (await follow_up).text == "4"
         assert engine.calls == [1, 4]
         assert jobs(metrics, "cancelled") == 2
 
@@ -251,7 +251,7 @@ async def test_closing_lane_cancels_queued_and_discards_running():
         other = scheduler.open_lane(FILE)
         job = await other.submit(wav(3))
         engine.gate.set()
-        assert await job == "3"
+        assert (await job).text == "3"
         assert engine.calls == [1, 3] and engine.max_active == 1
         assert jobs(metrics, "discarded") == 1 and jobs(metrics, "cancelled") == 1
         with pytest.raises(RuntimeError):
@@ -283,7 +283,7 @@ async def test_shutdown_drains_in_flight_jobs_and_rejects_new_work():
         lane = scheduler.open_lane(FILE)
         pending = [await lane.submit(wav(v)) for v in (1, 2, 3)]
         assert await scheduler.close(5) is True
-        assert [await j for j in pending] == ["1", "2", "3"]
+        assert [(await j).text for j in pending] == ["1", "2", "3"]
         with pytest.raises(APIError) as e:
             scheduler.open_lane(FILE)
         assert (e.value.status, e.value.code) == (503, "shutting_down")
@@ -320,7 +320,7 @@ async def test_inference_error_returns_500_then_worker_recovers():
             await (await lane.submit(wav(1)))
         assert (e.value.status, e.value.code) == (500, "inference_failed")
         assert "simulated" not in e.value.message
-        assert await (await lane.submit(wav(2))) == "2"
+        assert (await (await lane.submit(wav(2)))).text == "2"
         assert worker.state == EngineState.READY and engine.warmups == 2  # load + recovery
         assert metrics.value("worker_failures_total", stage="infer") == 1
 
@@ -398,7 +398,7 @@ def test_invalid_waveforms_never_reach_the_engine():
 async def test_chunk_limit_enforced_independently_of_queue_budget(kind):
     async with serving(FakeEngine(), max_chunk_seconds=1.0) as (scheduler, _, _):
         lane = scheduler.open_lane(kind)
-        assert await (await lane.submit(wav(1, 16000))) == "1"
+        assert (await (await lane.submit(wav(1, 16000)))).text == "1"
         with pytest.raises(ValueError, match="max_chunk_seconds"):
             await lane.submit(wav(2, 16001))
         assert scheduler._jobs == 0 and scheduler._samples == 0
@@ -420,7 +420,7 @@ async def test_running_deadline_expires_result_but_keeps_worker_and_budget():
         assert scheduler._jobs == 2 and scheduler._samples == 3200
         assert engine.calls == [1] and not following.future.done()
         engine.gate.set()
-        assert await following == "2"
+        assert (await following).text == "2"
         assert engine.max_active == 1 and jobs(metrics, "expired") == 1
         assert scheduler._jobs == 0 and scheduler._samples == 0
 

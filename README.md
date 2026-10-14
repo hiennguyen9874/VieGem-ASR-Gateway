@@ -1,12 +1,15 @@
-# QUAN-Transcribe gateway (R1)
+# QUAN-Transcribe gateway (R1 + R2a)
 
 Server nhận dạng tiếng nói tiếng Việt cho [QUAN-Transcribe-1.0](https://huggingface.co/qnguyen3/QUAN-Transcribe-1.0)
-với một **tập con** API OpenAI: `GET /v1/models`, `POST /v1/audio/transcriptions` (`json`, `text`, SSE). Không
+với một **tập con** API OpenAI: `GET /v1/models`, `POST /v1/audio/transcriptions` (`json`, `text`, SSE,
+`verbose_json`, `srt`, `vtt`). Không
 phải tương thích OpenAI đầy đủ: xem capability matrix và payload ở [docs/api-contract.vi.md](docs/api-contract.vi.md).
 
 - Một process = một model instance = một GPU; mọi inference chạy tuần tự trên một worker thread, có queue công bằng.
-- Output là text gốc của model: chữ thường, không dấu câu, số viết bằng chữ. Không có timestamps, logprobs,
-  `verbose_json`/`srt`/`vtt` (R2), Realtime (R3a), chỉ `language=vi`.
+- Output là text gốc của model: chữ thường, không dấu câu, số viết bằng chữ. Subtitle `srt`/`vtt` có thời gian từ
+  đường CTC greedy (cue cắt ở khoảng lặng ≥ 0.5 s; start có thể trễ ~1 âm tiết). `verbose_json` không có `segments`;
+  word timestamps (`timestamp_granularities[]=word`) chưa bật (chờ alignment gate). Không có logprobs, Realtime
+  (R3a); chỉ `language=vi`.
 - Alias `whisper-1` (tắt mặc định, `QUAN_WHISPER_ALIAS=true`) chỉ để client cũ chạy được: vẫn là model QUAN, output
   khác Whisper.
 
@@ -49,6 +52,8 @@ curl -s localhost:18080/v1/audio/transcriptions -H "Authorization: Bearer $QUAN_
     -F model=quan-transcribe-1.0 -F response_format=text -F file=@tests/fixtures/vi_a.wav
 curl -sN localhost:18080/v1/audio/transcriptions -H "Authorization: Bearer $QUAN_API_KEYS" \
     -F model=quan-transcribe-1.0 -F stream=true -F file=@tests/fixtures/vi_a.wav
+curl -s localhost:18080/v1/audio/transcriptions -H "Authorization: Bearer $QUAN_API_KEYS" \
+    -F model=quan-transcribe-1.0 -F response_format=srt -F file=@tests/fixtures/vi_a.wav   # hoặc vtt, verbose_json
 ```
 
 OpenAI Python SDK (`openai==3.31.0` đã kiểm thử; JS `openai@7.33.0` tương tự):
@@ -66,7 +71,8 @@ with open("tests/fixtures/vi_a.wav", "rb") as f:
 
 Định dạng audio: WAV, FLAC, MP3, MP4/M4A (AAC/ALAC), OGG (Vorbis/Opus/FLAC), WEBM/Matroska; nhận diện theo nội dung.
 Audio dài được cắt thành chunk ≤ 30 s tại điểm yên lặng; SSE gửi một delta cho mỗi chunk xong. Audio ≤ 100 ms → `""`.
-Lỗi dùng envelope OpenAI (`error.code`), danh sách ở contract §7.
+`srt`/`vtt`/`verbose_json` không stream được (`stream=true` → 400). Lỗi dùng envelope OpenAI (`error.code`), danh
+sách ở contract §7.
 
 ## 4. Cấu hình và giới hạn
 

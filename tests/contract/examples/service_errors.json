@@ -10,6 +10,7 @@
   {"status":413,"headers":{},"error":{"message":"Form field exceeds 8192 bytes.","type":"invalid_request_error","param":null,"code":"request_too_large"}},
   {"status":429,"headers":{"Retry-After":"1"},"error":{"message":"Server is busy, retry later.","type":"rate_limit_error","param":null,"code":"server_busy"}},
   {"status":500,"headers":{},"error":{"message":"Inference failed.","type":"server_error","param":null,"code":"inference_failed"}},
+  {"status":500,"headers":{},"error":{"message":"Timestamps could not be computed.","type":"server_error","param":null,"code":"alignment_failed"}},
   {"status":500,"headers":{},"error":{"message":"Internal server error.","type":"server_error","param":null,"code":"internal_error"}},
   {"status":503,"headers":{"Retry-After":"5"},"error":{"message":"Model is not ready.","type":"server_error","param":null,"code":"model_not_ready"}},
   {"status":503,"headers":{},"error":{"message":"Server is shutting down.","type":"server_error","param":null,"code":"shutting_down"}},

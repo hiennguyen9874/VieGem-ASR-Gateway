@@ -46,9 +46,9 @@ def test_completed_chunk_is_delivered_while_replacement_admission_is_blocked():
         spans = [Span(i * 1601, (i + 1) * 1601) for i in range(3)]
         async with aclosing(run_chunks(lane, np.zeros(4803, dtype=np.float32), spans,
                                       time.monotonic() + 5, 2)) as texts:
-            assert await anext(texts) == "1"
+            assert await anext(texts) == (spans[0], "1")
             # The second result is available even though replenishing the window is blocked.
-            assert await asyncio.wait_for(anext(texts), 0.2) == "2"
+            assert await asyncio.wait_for(anext(texts), 0.2) == (spans[1], "2")
             await asyncio.wait_for(lane.blocked.wait(), 0.2)
         assert lane.cancelled.is_set()
 

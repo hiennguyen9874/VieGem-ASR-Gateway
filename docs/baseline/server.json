@@ -1,8 +1,8 @@
 {
-  "base_url": "http://127.0.0.1:8765",
-  "commit": "289b6f8738675d9cdac1ed5139645d1a6d89a66b-dirty",
-  "started_unix": 1791973509,
-  "ready_wait_s": 13.218,
+  "base_url": "http://127.0.0.1:18123",
+  "commit": "077575aef63b79c0f8aac2f504ef448a3d379dd6-dirty",
+  "started_unix": 1791977772,
+  "ready_wait_s": 2.196,
   "health": {
     "status": "ok"
   },
@@ -23,11 +23,21 @@
       "sse_joined": "các sản phẩm thủ công có thể được coi là độ cổ mặc dù tuổi đời của chúng ch trẻ hơn rất nhiều các sản phẩm tương tự được sản xuất hàng loạt",
       "sse_done": "các sản phẩm thủ công có thể được coi là độ cổ mặc dù tuổi đời của chúng ch trẻ hơn rất nhiều các sản phẩm tương tự được sản xuất hàng loạt",
       "sse_errors": [],
+      "cue_content_types": {
+        "srt": "text/plain; charset=utf-8",
+        "vtt": "text/plain; charset=utf-8"
+      },
+      "cues": {
+        "srt": 2,
+        "vtt": 2
+      },
       "timings_s": {
-        "json": 0.147,
-        "text": 0.128,
-        "sse_total": 0.128,
-        "sse_first_event": 0.128
+        "json": 0.158,
+        "text": 0.132,
+        "sse_total": 0.129,
+        "sse_first_event": 0.129,
+        "verbose_json": 0.126,
+        "srt_vtt": 0.285
       },
       "audio_s": 8.88,
       "baseline": "các sản phẩm thủ công có thể được coi là độ cổ mặc dù tuổi đời của chúng ch trẻ hơn rất nhiều các sản phẩm tương tự được sản xuất hàng loạt",
@@ -46,11 +56,21 @@
       "sse_joined": "nghiên cứu trí tuệ nhân tạo bao gồm tạo ra những cỗ máy tự động hóa các tác dụ đòi hỏi hành vi thông minh",
       "sse_done": "nghiên cứu trí tuệ nhân tạo bao gồm tạo ra những cỗ máy tự động hóa các tác dụ đòi hỏi hành vi thông minh",
       "sse_errors": [],
+      "cue_content_types": {
+        "srt": "text/plain; charset=utf-8",
+        "vtt": "text/plain; charset=utf-8"
+      },
+      "cues": {
+        "srt": 2,
+        "vtt": 2
+      },
       "timings_s": {
-        "json": 0.131,
-        "text": 0.124,
+        "json": 0.13,
+        "text": 0.14,
         "sse_total": 0.126,
-        "sse_first_event": 0.126
+        "sse_first_event": 0.125,
+        "verbose_json": 0.126,
+        "srt_vtt": 0.258
       },
       "audio_s": 8.46,
       "baseline": "nghiên cứu trí tuệ nhân tạo bao gồm tạo ra những cỗ máy tự động hóa các tác dụ đòi hỏi hành vi thông minh",
@@ -69,11 +89,21 @@
       "sse_joined": "",
       "sse_done": "",
       "sse_errors": [],
+      "cue_content_types": {
+        "srt": "text/plain; charset=utf-8",
+        "vtt": "text/plain; charset=utf-8"
+      },
+      "cues": {
+        "srt": 0,
+        "vtt": 0
+      },
       "timings_s": {
-        "json": 0.15,
-        "text": 0.125,
-        "sse_total": 0.125,
-        "sse_first_event": 0.125
+        "json": 0.147,
+        "text": 0.122,
+        "sse_total": 0.135,
+        "sse_first_event": 0.134,
+        "verbose_json": 0.13,
+        "srt_vtt": 0.255
       },
       "audio_s": 2.0,
       "baseline": "",
@@ -92,11 +122,21 @@
       "sse_joined": "",
       "sse_done": "",
       "sse_errors": [],
+      "cue_content_types": {
+        "srt": "text/plain; charset=utf-8",
+        "vtt": "text/plain; charset=utf-8"
+      },
+      "cues": {
+        "srt": 0,
+        "vtt": 0
+      },
       "timings_s": {
-        "json": 0.132,
-        "text": 0.12,
-        "sse_total": 0.119,
-        "sse_first_event": 0.119
+        "json": 0.126,
+        "text": 0.124,
+        "sse_total": 0.116,
+        "sse_first_event": 0.115,
+        "verbose_json": 0.119,
+        "srt_vtt": 0.234
       },
       "audio_s": 0.2,
       "baseline": "",
@@ -115,22 +155,35 @@
       "sse_joined": "một số loài động vật như voi và hô cao cổ thường hay đã gần xe và chỉ với các dụng cụ bình thường chúng ta cũng sẽ quan sát một cách dễ dàng điện thoại vệ tinh nói chung không phải là sự thay thế cho điện thoại di động vì bạn phải ở ngoài trời và có tầm nhìn thông thoáng thẳng đến vệ tinh thì mới sử dụng được sau đó la singh giữa vai giờ chính khi hát các bài hát he bác sĩ nghĩ rằng một số bệnh nhân có thể đã bị lâyẹp ở bệnh viện và ít nhất hai người là nhân viên y tế trong bệnh viện tôi không biết bạn có nhận ra hay không nhưng hầu hết hàng hóa từúng mỹ nhập khẩu vào nước này đều được miễn thuế argentina nổi tiếng có một trong những đội bóng polo và cầu thủ giỏi nhất thế giới nếu đến thăm vùng bắc cực hoặc nam cực vào mùa đông bạn sẽ được trải nghiệm đến vùng cực nghĩa là mặt trời không nhú lên khỏi chân trời lúc đầu trang phục chịu ảnh hưởng nặng nề của nền văn hóa diesel ở phía đông điều lệ cần có sự nhất trí từ tất cả các bang trước khi sửa đổi và các bang xem nhẹ chính quyền trung ương đến mức đại diễn thường xuyên vắng mặt bản báo cáo mở đầu bằng lời biện hộ cho cuộc trên luận mở và tạo lập sự đồng thuận của hoa kỳ về chính sách đối với trung đồng",
       "sse_done": "một số loài động vật như voi và hô cao cổ thường hay đã gần xe và chỉ với các dụng cụ bình thường chúng ta cũng sẽ quan sát một cách dễ dàng điện thoại vệ tinh nói chung không phải là sự thay thế cho điện thoại di động vì bạn phải ở ngoài trời và có tầm nhìn thông thoáng thẳng đến vệ tinh thì mới sử dụng được sau đó la singh giữa vai giờ chính khi hát các bài hát he bác sĩ nghĩ rằng một số bệnh nhân có thể đã bị lâyẹp ở bệnh viện và ít nhất hai người là nhân viên y tế trong bệnh viện tôi không biết bạn có nhận ra hay không nhưng hầu hết hàng hóa từúng mỹ nhập khẩu vào nước này đều được miễn thuế argentina nổi tiếng có một trong những đội bóng polo và cầu thủ giỏi nhất thế giới nếu đến thăm vùng bắc cực hoặc nam cực vào mùa đông bạn sẽ được trải nghiệm đến vùng cực nghĩa là mặt trời không nhú lên khỏi chân trời lúc đầu trang phục chịu ảnh hưởng nặng nề của nền văn hóa diesel ở phía đông điều lệ cần có sự nhất trí từ tất cả các bang trước khi sửa đổi và các bang xem nhẹ chính quyền trung ương đến mức đại diễn thường xuyên vắng mặt bản báo cáo mở đầu bằng lời biện hộ cho cuộc trên luận mở và tạo lập sự đồng thuận của hoa kỳ về chính sách đối với trung đồng",
       "sse_errors": [],
+      "cue_content_types": {
+        "srt": "text/plain; charset=utf-8",
+        "vtt": "text/plain; charset=utf-8"
+      },
+      "cues": {
+        "srt": 43,
+        "vtt": 43
+      },
       "timings_s": {
-        "json": 0.344,
-        "text": 0.317,
-        "sse_total": 0.316,
-        "sse_first_event": 0.16
+        "json": 0.353,
+        "text": 0.347,
+        "sse_total": 0.343,
+        "sse_first_event": 0.174,
+        "verbose_json": 0.346,
+        "srt_vtt": 0.685
       },
       "audio_s": 106.62,
       "wer": 0.0699
     }
   },
   "metrics_excerpt": [
-    "quan_decodes_total{outcome=\"ok\"} 15.0",
-    "quan_jobs_total{kind=\"file\",outcome=\"ok\"} 24.0",
+    "quan_decodes_total{outcome=\"ok\"} 30.0",
+    "quan_jobs_total{kind=\"file\",outcome=\"ok\"} 48.0",
     "quan_transcriptions_total{outcome=\"ok\",response_format=\"json\",stream=\"false\"} 5.0",
     "quan_transcriptions_total{outcome=\"ok\",response_format=\"json\",stream=\"true\"} 5.0",
-    "quan_transcriptions_total{outcome=\"ok\",response_format=\"text\",stream=\"false\"} 5.0"
+    "quan_transcriptions_total{outcome=\"ok\",response_format=\"srt\",stream=\"false\"} 5.0",
+    "quan_transcriptions_total{outcome=\"ok\",response_format=\"text\",stream=\"false\"} 5.0",
+    "quan_transcriptions_total{outcome=\"ok\",response_format=\"verbose_json\",stream=\"false\"} 5.0",
+    "quan_transcriptions_total{outcome=\"ok\",response_format=\"vtt\",stream=\"false\"} 5.0"
   ],
   "failures": []
 }

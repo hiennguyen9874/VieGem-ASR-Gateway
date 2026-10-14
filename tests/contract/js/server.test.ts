@@ -48,6 +48,46 @@ test('json and text transcription', { skip }, async () => {
   assert.equal(text, exp.text);
 });
 
+// Cue texts of a gateway SRT/VTT body (the last line of each block).
+const cueTexts = (body: string) =>
+  body.replace(/^WEBVTT\n\n/, '').split('\n\n').filter((b) => b).map((b) => b.split('\n').at(-1));
+
+test('verbose_json, srt and vtt carry the same text', { skip }, async () => {
+  const exp = expected();
+  const v = await client().audio.transcriptions.create({
+    file: await audio('speech.wav'),
+    model: MODEL,
+    response_format: 'verbose_json',
+  });
+  assert.deepEqual(v, {
+    text: exp.text,
+    language: 'vietnamese',
+    duration: exp.seconds,
+    usage: { type: 'duration', seconds: exp.seconds },
+  });
+  for (const fmt of ['srt', 'vtt'] as const) {
+    const body: string = await client().audio.transcriptions.create({
+      file: await audio('speech.wav'),
+      model: MODEL,
+      response_format: fmt,
+    });
+    assert.equal(cueTexts(body).join(' '), exp.text);
+    assert.ok(fmt === 'srt' ? body.startsWith('1\n') : body.startsWith('WEBVTT\n\n'));
+  }
+  await assert.rejects(
+    client().audio.transcriptions.create({
+      file: await audio('speech.wav'),
+      model: MODEL,
+      response_format: 'verbose_json',
+      timestamp_granularities: ['word'],
+    }),
+    (err: unknown) =>
+      err instanceof OpenAI.BadRequestError &&
+      err.code === 'unsupported_parameter' &&
+      err.param === 'timestamp_granularities[]',
+  );
+});
+
 test('SSE stream: deltas join to done', { skip }, async () => {
   const exp = expected();
   const stream = await client().audio.transcriptions.create({ file: await audio('speech.wav'), model: MODEL, stream: true });

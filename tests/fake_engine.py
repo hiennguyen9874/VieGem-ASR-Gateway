@@ -2,6 +2,9 @@
 
 A waveform's identity is its fill value: `wav(7)` transcribes to "7", so tests can check results are not mixed up.
 Tests on real (decoded) audio pass `text_fn` to derive the text from the chunk instead.
+
+Results carry a synthetic CTC path consistent with the text over a character vocabulary (`PIECES`): each word is a
+"▁"-prefixed first character followed by one unit per character, spread evenly over the chunk's encoder frames.
 """
 
 import threading
@@ -11,6 +14,23 @@ from collections.abc import Callable
 import numpy as np
 
 from app.config import Config
+from app.engine import ChunkResult
+
+VI_LETTERS = "àáảãạăằắẳẵặâầấẩẫậđèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵ"
+CHARS = [chr(c) for c in range(33, 127)] + list(VI_LETTERS)
+PIECES = ("", "") + tuple(p for c in CHARS for p in ("\u2581" + c, c))
+UNIT = {p: i for i, p in enumerate(PIECES) if i >= 2}
+
+
+def fake_result(text: str, samples: int) -> ChunkResult:
+    """`text` (single-space separated) as the greedy result of a `samples`-long chunk."""
+    pieces = [p for word in text.split(" ") if word for p in ("\u2581" + word[0], *word[1:])]
+    units = tuple(UNIT[p] for p in pieces)
+    frames = max(1, -(-(samples - 160) // 640))  # valid encoder frames: 640 k + 160 < samples
+    n = len(units)
+    first = tuple(i * frames // n for i in range(n))
+    last = tuple(max(f, (i + 1) * frames // n - 1) for i, f in enumerate(first))
+    return ChunkResult(text, units, first, last, frames)
 
 
 def wav(value: int, samples: int = 1600) -> np.ndarray:
@@ -53,7 +73,10 @@ class FakeEngine:
         if self.warmup_error:
             raise self.warmup_error
 
-    def transcribe(self, wav: np.ndarray) -> str:
+    def pieces(self) -> tuple[str, ...]:
+        return PIECES
+
+    def transcribe(self, wav: np.ndarray) -> ChunkResult:
         with self.lock:
             self.active += 1
             self.max_active = max(self.max_active, self.active)
@@ -65,7 +88,7 @@ class FakeEngine:
             if self.fail_calls:
                 self.fail_calls -= 1
                 raise RuntimeError("CUDA error: simulated")
-            return self.text_fn(wav)
+            return fake_result(self.text_fn(wav), len(wav))
         finally:
             with self.lock:
                 self.active -= 1

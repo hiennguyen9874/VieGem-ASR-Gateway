@@ -76,6 +76,11 @@ def inference_failed() -> APIError:
     return APIError(500, "server_error", "inference_failed", "Inference failed.")
 
 
+def alignment_failed() -> APIError:
+    """The CTC path did not match the transcript: timestamps cannot be produced (never guessed)."""
+    return APIError(500, "server_error", "alignment_failed", "Timestamps could not be computed.")
+
+
 def internal_error() -> APIError:
     return APIError(500, "server_error", "internal_error", "Internal server error.")
 

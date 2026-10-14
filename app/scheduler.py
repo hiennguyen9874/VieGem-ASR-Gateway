@@ -26,7 +26,7 @@ from collections.abc import Callable
 import numpy as np
 
 from app.config import SAMPLE_RATE, Config
-from app.engine import EngineState, EngineWorker, check_waveform
+from app.engine import ChunkResult, EngineState, EngineWorker, check_waveform
 from app.errors import APIError, inference_failed, model_not_ready, request_timeout, server_busy, shutting_down
 from app.observability import Metrics, log, request_id
 
@@ -43,11 +43,11 @@ class JobState(enum.Enum):
 
 
 class Job:
-    """Awaitable result of one chunk. Awaiting it returns the text or raises an `APIError`."""
+    """Awaitable result of one chunk. Awaiting it returns a `ChunkResult` or raises an `APIError`."""
 
     def __init__(self, lane: "Lane", audio: np.ndarray, deadline: float | None):
         self.lane, self.audio, self.samples, self.deadline = lane, audio, len(audio), deadline
-        self.future: asyncio.Future[str] = asyncio.get_running_loop().create_future()
+        self.future: asyncio.Future[ChunkResult] = asyncio.get_running_loop().create_future()
         self.state = JobState.QUEUED
         self.expired = False
         self.enqueued_at = time.monotonic()
@@ -301,7 +301,7 @@ class Scheduler:
             if job.deadline is not None:
                 timer = asyncio.get_running_loop().call_later(max(0, job.deadline - now), expire)
             try:
-                text = await self._worker.transcribe(job.audio)
+                result = await self._worker.transcribe(job.audio)
             except APIError as e:
                 error = e
             except Exception:  # bug in the adapter: never leak details to the client
@@ -325,7 +325,7 @@ class Scheduler:
                 job.future.set_exception(error)
             else:
                 outcome = "ok"
-                job.future.set_result(text)
+                job.future.set_result(result)
             self._count(outcome, kind)
             log(logging.DEBUG, "scheduler.job", request_id=lane.request_id, lane=lane.id, kind=kind.value,
                 outcome=outcome, audio_s=round(job.samples / SAMPLE_RATE, 3),

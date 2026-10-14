@@ -113,11 +113,18 @@ Container: file đã viết, `uv sync --frozen --no-dev` + smoke đã chạy tr�
 
 ### M4 — Rich output và alignment (P1, sau R1)
 
-- [ ] Result model nội bộ giữ chunk spans, text, duration; `app/alignment.py` có boundary rõ với adapter QUAN.
-- [ ] Segment subtitles dùng absolute sample offsets, không giả Whisper IDs/probabilities. Chốt optional/required fields theo SDK profile; nếu không có dữ liệu thật để đáp ứng schema, thu hẹp profile.
-- [ ] Kiểm chứng subsampling, feature padding và frame→sample mapping trên fixtures biết mốc tiếng nói.
-- [ ] Word alignment theo final transcript, xử lý tokenizer/unit mapping, repeated tokens/blanks, LM khác greedy và transcript không align được. Không gắn greedy spans vào LM text.
-- [ ] Test monotonicity, range `[0,duration]`, whitespace-unit definition tiếng Việt, cross-format final text; đánh giá alignment bằng fixture annotated và ngưỡng chốt trước khi release.
+Trạng thái: **R2a đạt (`verbose_json`/`srt`/`vtt`); R2b (word timestamps) chưa đạt — chặn bởi bộ annotate tay.**
+Thiết kế + số đo P0: [m4-design.vi.md](m4-design.vi.md). CPU: `tests/unit/test_alignment.py`,
+`tests/unit/test_transcription_{params,api}.py`, contract (`examples/transcription_verbose*.json`,
+`transcription.{srt,vtt}`, cả hai SDK, server thật). GPU: `tests/gpu/test_engine.py` (path == `greedy_decode`),
+`tests/gpu/test_server.py` (gate R2a), `scripts/probe_alignment.py` → `docs/baseline/alignment_probe.json`; smoke
+`scripts/smoke_server.py` → `docs/baseline/server.json` có cả ba format.
+
+- [x] Result model nội bộ giữ chunk spans, text, duration; `app/alignment.py` có boundary rõ với adapter QUAN. *(`ChunkResult` = text + best path + frames; `run_chunks` yield `(Span, ChunkResult)`; alignment thuần Python, không torch/tokenizer.)*
+- [x] Segment subtitles dùng absolute sample offsets, không giả Whisper IDs/probabilities. Chốt optional/required fields theo SDK profile; nếu không có dữ liệu thật để đáp ứng schema, thu hẹp profile. *(`verbose_json` không có `segments` vì schema cần field Whisper; `timestamp_granularities[]=segment` → 400; cue chỉ có ở `srt`/`vtt`.)*
+- [x] Kiểm chứng subsampling, feature padding và frame→sample mapping trên fixtures biết mốc tiếng nói. *(P0: `out_lens` = công thức trên 21 độ dài; shift test 100% ± 1 frame; `EMISSION_SHIFT = 0`.)*
+- [x] Word alignment theo final transcript, xử lý tokenizer/unit mapping, repeated tokens/blanks, LM khác greedy và transcript không align được. Không gắn greedy spans vào LM text. *(Gateway luôn greedy: path argmax là alignment của chính text; invariant piece/text sai → 500 `alignment_failed`, không chia đều.)*
+- [ ] Test monotonicity, range `[0,duration]`, whitespace-unit definition tiếng Việt, cross-format final text; đánh giá alignment bằng fixture annotated và ngưỡng chốt trước khi release. *(Monotonic/range/cross-format: xong (CPU + GPU). Đánh giá word alignment: chưa — cần bộ annotate tay ≥ 200 từ (m4-design §7); `WORD_TIMESTAMPS = False`, `word` → 400.)*
 
 **Gate R2:** segment/subtitle tests pass trước; word timestamps release riêng khi đạt độ chính xác đã thống nhất. Không làm word alignment fail silently thành uniform spacing.
 

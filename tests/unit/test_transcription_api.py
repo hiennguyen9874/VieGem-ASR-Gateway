@@ -19,10 +19,13 @@ import pytest
 import soundfile as sf
 
 from app.chunking import split
+from app import transcription
+from app.alignment import PAUSE_SAMPLES
 from app.main import create_app
 from app.transcription import MODEL_ID
 from tests.fake_engine import FakeEngine, config
-from tests.live_server import AUTH, KEY, SR, expected_deltas, name, noise, serve, wait_for, wav_file
+from tests.live_server import (AUTH, KEY, SR, expected_deltas, name, noise, parse_cues, serve, wait_for,
+                               wav_file)
 
 URL = "/v1/audio/transcriptions"
 
@@ -140,14 +143,90 @@ def test_sdk_models_json_text_and_stream(tmp_path):
         assert srv.app.state.metrics.value("transcription_audio_seconds_total") == pytest.approx(5 * len(x) / SR)
 
 
+def test_timed_formats_agree_with_json_text_and_stream(tmp_path):
+    """verbose_json/srt/vtt carry the same transcript as json/text/SSE; cues are ordered, inside the audio, and
+    cross chunk boundaries with absolute times. A silent chunk adds no cue."""
+    x = noise(9.5, seed=11)
+    x[4 * SR:7 * SR] = 0  # digital silence: the chunks inside it transcribe to "" and form a pause between cues
+    audio = wav_file(tmp_path / "a.wav", x)
+
+    def text_fn(w):
+        return "" if not w.any() else name(w)
+
+    silent = [(s.start / SR, s.end / SR) for s in split(x, SR) if not x[s.start:s.end].any()]
+    assert sum(b - a for a, b in silent) >= PAUSE_SAMPLES / SR
+    with serve(FakeEngine(text_fn=text_fn), max_chunk_seconds=1.0) as srv:
+        full = post(srv, audio).json()["text"]
+        assert full and post(srv, audio, response_format="text").text == full
+        assert events(post(srv, audio, stream="true"))[-1]["text"] == full
+        with audio.open("rb") as f:
+            v = srv.sdk.audio.transcriptions.create(file=f, model=MODEL_ID, response_format="verbose_json")
+        assert isinstance(v, openai.types.audio.TranscriptionVerbose)
+        assert v.model_dump(exclude_none=True) == {"text": full, "language": "vietnamese", "duration": len(x) / SR,
+                                                   "usage": {"type": "duration", "seconds": len(x) / SR}}
+        for fmt in ("srt", "vtt"):
+            r = post(srv, audio, response_format=fmt)
+            assert r.status_code == 200 and r.headers["content-type"] == "text/plain; charset=utf-8"
+            with audio.open("rb") as f:
+                assert srv.sdk.audio.transcriptions.create(file=f, model=MODEL_ID, response_format=fmt) == r.text
+            cues = parse_cues(r.text, fmt)
+            assert " ".join(c[2] for c in cues) == full
+            assert all(0 <= a < b <= len(x) / SR for a, b, _ in cues)
+            assert all(p[1] <= n[0] for p, n in zip(cues, cues[1:]))
+            # No cue in a silent chunk (SRT/VTT times are rounded to whole ms).
+            assert not any(a < s1 - 0.0005 and b > s0 + 0.0005 for a, b, _ in cues for s0, s1 in silent)
+            assert cues[-1][1] > 5  # absolute times past the first chunks
+        assert idle(srv.app)
+        assert outcomes(srv.app, "ok", "srt") == 2 and outcomes(srv.app, "ok", "verbose_json") == 1
+
+
+def test_word_timestamps_after_the_gate(tmp_path, monkeypatch):
+    monkeypatch.setattr(transcription, "WORD_TIMESTAMPS", True)
+    x = noise(3.5, seed=12)
+    audio = wav_file(tmp_path / "a.wav", x)
+    full = "".join(expected_deltas(x, 1.0))
+    with serve(max_chunk_seconds=1.0) as srv:
+        with audio.open("rb") as f:
+            v = srv.sdk.audio.transcriptions.create(file=f, model=MODEL_ID, response_format="verbose_json",
+                                                    timestamp_granularities=["word"])
+        assert v.text == full and " ".join(w.word for w in v.words) == full
+        assert all(0 <= w.start < w.end <= len(x) / SR for w in v.words)
+        assert all(a.end <= b.start for a, b in zip(v.words, v.words[1:]))
+        assert v.segments is None
+
+
+def test_alignment_failure_is_an_error_only_for_timed_formats(tmp_path):
+    class Broken(FakeEngine):
+        def transcribe(self, wav):
+            return super().transcribe(wav)._replace(units=())  # a path that does not spell the text
+
+    audio = wav_file(tmp_path / "a.wav", noise(2.5, seed=13))
+    with serve(Broken(text_fn=name), max_chunk_seconds=1.0) as srv:
+        assert post(srv, audio).status_code == 200
+        assert post(srv, audio, response_format="verbose_json").status_code == 200  # needs no timing
+        for fmt in ("srt", "vtt"):
+            err = envelope(post(srv, audio, response_format=fmt), 500, "alignment_failed")
+            assert err["type"] == "server_error" and "0." not in err["message"]
+        assert outcomes(srv.app, "alignment_failed", "srt") == 1
+        assert idle(srv.app)
+
+
 @pytest.mark.parametrize("samples", [0, 1, 1600])
-def test_empty_and_short_audio_is_empty_text_without_inference(tmp_path, samples):
+def test_empty_and_short_audio_is_empty_text_without_inference(tmp_path, samples, monkeypatch):
+    monkeypatch.setattr(transcription, "WORD_TIMESTAMPS", True)
     audio = wav_file(tmp_path / "a.wav", noise(1, seed=2)[:samples])
     with serve() as srv:
         r = post(srv, audio)
         assert r.json() == {"text": "", "usage": {"type": "duration", "seconds": samples / SR}}
         assert post(srv, audio, response_format="text").text == ""
         assert events(post(srv, audio, stream="true")) == [{"type": "transcript.text.done", "text": ""}]
+        verbose = {"text": "", "language": "vietnamese", "duration": samples / SR,
+                   "usage": {"type": "duration", "seconds": samples / SR}}
+        assert post(srv, audio, response_format="verbose_json").json() == verbose
+        assert post(srv, audio, response_format="verbose_json", **{"timestamp_granularities[]": "word"}).json() == {
+            **verbose, "words": []}
+        assert post(srv, audio, response_format="srt").text == ""
+        assert post(srv, audio, response_format="vtt").text == "WEBVTT\n\n"
         assert srv.engine.calls == []
         assert idle(srv.app)
 
@@ -198,9 +277,14 @@ def test_errors_before_headers_are_http_envelopes(tmp_path):
                             headers={"Content-Type": "multipart/form-data; boundary=b0undary"})
         assert envelope(r, 400, "missing_required_parameter")["param"] == "file"
         envelope(srv.client.get(URL), 405, "method_not_allowed")
+        envelope(post(srv, audio, response_format="diarized_json"), 400, "unsupported_response_format")
         with pytest.raises(openai.BadRequestError) as e, audio.open("rb") as f:
-            srv.sdk.audio.transcriptions.create(file=f, model=MODEL_ID, response_format="verbose_json")
-        assert e.value.code == "unsupported_response_format"
+            srv.sdk.audio.transcriptions.create(file=f, model=MODEL_ID, response_format="srt", stream=True)
+        assert (e.value.code, e.value.param) == ("unsupported_parameter", "stream")
+        with pytest.raises(openai.BadRequestError) as e, audio.open("rb") as f:
+            srv.sdk.audio.transcriptions.create(file=f, model=MODEL_ID, response_format="verbose_json",
+                                                timestamp_granularities=["word"])
+        assert (e.value.code, e.value.param) == ("unsupported_parameter", "timestamp_granularities[]")
         assert srv.engine.calls == []
         assert idle(srv.app)
         assert outcomes(srv.app, "unsupported_language", "unknown", "unknown") == 1

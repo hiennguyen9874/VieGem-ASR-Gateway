@@ -1,10 +1,11 @@
-"""Form validation of POST /v1/audio/transcriptions (docs/m3-design.vi.md §3.2), the chunk joiner and model ids."""
+"""Form validation of POST /v1/audio/transcriptions (docs/m4-design.vi.md §4.5), the chunk joiner and model ids."""
 
 import json
 from pathlib import Path
 
 import pytest
 
+from app import transcription
 from app.errors import APIError
 from app.transcription import MODEL_ID, Joiner, Params, model_object, parse_params, served_models
 from tests.fake_engine import config
@@ -28,6 +29,7 @@ def error(fields, cfg=CFG) -> tuple[int, str, str | None]:
     ([M, ("response_format", "text"), ("stream", "true")], Params(MODEL_ID, "text", True)),
     ([M, ("temperature", "0.0")], Params(MODEL_ID, "json", False)),
     ([M, ("temperature", "-0")], Params(MODEL_ID, "json", False)),
+    *[([M, ("response_format", f)], Params(MODEL_ID, f, False)) for f in ("verbose_json", "srt", "vtt")],
 ])
 def test_valid(fields, expected):
     assert parse_params(fields, CFG) == expected
@@ -45,9 +47,13 @@ def test_valid(fields, expected):
     # 3. model missing or empty
     ([], (400, "missing_required_parameter", "model")),
     ([("model", "")], (400, "missing_required_parameter", "model")),
-    # 4./5. array fields, any value
+    # 4. include[], any value
     ([M, ("include[]", "logprobs")], (400, "unsupported_parameter", "include[]")),
-    ([M, ("timestamp_granularities[]", "segment")], (400, "unsupported_parameter", "timestamp_granularities[]")),
+    # 5. granularity values
+    *[([M, ("timestamp_granularities[]", v)], (400, "invalid_value", "timestamp_granularities[]"))
+      for v in ("", "words", "Word", "token")],
+    ([M, ("timestamp_granularities[]", "word"), ("timestamp_granularities[]", "x")],
+     (400, "invalid_value", "timestamp_granularities[]")),
     # 6. language
     ([M, ("language", "en")], (400, "unsupported_language", "language")),
     ([M, ("language", "")], (400, "unsupported_language", "language")),
@@ -60,12 +66,20 @@ def test_valid(fields, expected):
     ([M, ("temperature", "0.2")], (400, "unsupported_parameter", "temperature")),
     # 8. prompt
     ([M, ("prompt", "xin chào")], (400, "unsupported_parameter", "prompt")),
-    # 9. response formats outside R1
+    # 9. response formats
     *[([M, ("response_format", f)], (400, "unsupported_response_format", "response_format"))
-      for f in ("verbose_json", "srt", "vtt", "diarized_json", "", "JSON")],
-    # 10. stream
+      for f in ("diarized_json", "", "JSON", "SRT")],
+    # 10. stream: valid values, then only json/text stream
     *[([M, ("stream", v)], (400, "invalid_value", "stream")) for v in ("True", "1", "yes", "")],
-    # 11. model not served
+    *[([M, ("stream", "true"), ("response_format", f)], (400, "unsupported_parameter", "stream"))
+      for f in ("verbose_json", "srt", "vtt")],
+    # 11. granularities only with verbose_json
+    *[([M, ("timestamp_granularities[]", "word"), *fmt], (400, "unsupported_parameter", "timestamp_granularities[]"))
+      for fmt in ([], [("response_format", "json")], [("response_format", "srt")], [("response_format", "text")])],
+    # 12. segment never (no Whisper segment fields); word not before the alignment gate
+    *[([M, ("response_format", "verbose_json"), *(("timestamp_granularities[]", g) for g in gs)],
+       (400, "unsupported_parameter", "timestamp_granularities[]")) for gs in (["segment"], ["word"], ["word", "segment"])],
+    # 13. model not served
     ([("model", "whisper-1")], (404, "model_not_found", "model")),
     ([("model", "gpt-4o-transcribe")], (404, "model_not_found", "model")),
 ])
@@ -79,20 +93,26 @@ def test_errors_come_in_table_order():
         return lambda f: [x for x in f if x[0] != name]
 
     fields = [("unknown", "1"), ("language", "en"), ("language", "en"), ("include[]", "x"),
-              ("timestamp_granularities[]", "word"), ("temperature", "x"), ("prompt", "p"),
-              ("response_format", "srt"), ("stream", "maybe")]
+              ("timestamp_granularities[]", "bad"), ("temperature", "x"), ("prompt", "p"),
+              ("response_format", "srt2"), ("stream", "maybe")]
     steps = [
         (("unsupported_parameter", "unknown"), drop("unknown")),
         (("invalid_value", "language"), lambda f: f[:1] + f[2:]),
         (("missing_required_parameter", "model"), lambda f: f + [("model", "nope")]),
         (("unsupported_parameter", "include[]"), drop("include[]")),
-        (("unsupported_parameter", "timestamp_granularities[]"), drop("timestamp_granularities[]")),
+        (("invalid_value", "timestamp_granularities[]"),
+         lambda f: drop("timestamp_granularities[]")(f) + [("timestamp_granularities[]", "segment")]),
         (("unsupported_language", "language"), drop("language")),
         (("invalid_value", "temperature"), lambda f: drop("temperature")(f) + [("temperature", "0.5")]),
         (("unsupported_parameter", "temperature"), drop("temperature")),
         (("unsupported_parameter", "prompt"), drop("prompt")),
-        (("unsupported_response_format", "response_format"), drop("response_format")),
-        (("invalid_value", "stream"), drop("stream")),
+        (("unsupported_response_format", "response_format"),
+         lambda f: drop("response_format")(f) + [("response_format", "srt")]),
+        (("invalid_value", "stream"), lambda f: drop("stream")(f) + [("stream", "true")]),
+        (("unsupported_parameter", "stream"), drop("stream")),
+        (("unsupported_parameter", "timestamp_granularities[]"),
+         lambda f: drop("response_format")(f) + [("response_format", "verbose_json")]),
+        (("unsupported_parameter", "timestamp_granularities[]"), drop("timestamp_granularities[]")),
         (("model_not_found", "model"), None),
     ]
     for want, fix in steps:
@@ -104,6 +124,17 @@ def test_errors_come_in_table_order():
 def test_repeated_array_fields_are_not_duplicates():
     # Repetition is legal for the [] fields; they are refused for their value, not for repeating.
     assert error([M, ("include[]", "a"), ("include[]", "b")]) == (400, "unsupported_parameter", "include[]")
+
+
+def test_word_granularity_after_the_gate(monkeypatch):
+    monkeypatch.setattr(transcription, "WORD_TIMESTAMPS", True)
+    vj = ("response_format", "verbose_json")
+    words = [M, vj, ("timestamp_granularities[]", "word"), ("timestamp_granularities[]", "word")]  # merged
+    assert parse_params(words, CFG) == Params(MODEL_ID, "verbose_json", False, frozenset({"word"}))
+    assert error([M, vj, ("timestamp_granularities[]", "word"), ("timestamp_granularities[]", "segment")]) == (
+        400, "unsupported_parameter", "timestamp_granularities[]")
+    assert error([M, ("timestamp_granularities[]", "word")]) == (
+        400, "unsupported_parameter", "timestamp_granularities[]")
 
 
 def test_whisper_alias_opt_in():

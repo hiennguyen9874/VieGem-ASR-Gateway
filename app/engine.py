@@ -17,7 +17,7 @@ import queue
 import threading
 import time
 from pathlib import Path
-from typing import Protocol
+from typing import NamedTuple, Protocol
 
 import numpy as np
 
@@ -28,12 +28,40 @@ from app.observability import Metrics, log
 # The log-mel frontend crashes below 161 samples (docs/baseline.vi.md §7). Audio policy for short clips (return ""
 # without inference) belongs to the callers; this is the hard safety floor.
 MIN_FORWARD_SAMPLES = 161
+BLANK = 0  # CTC unit ids: 0 = blank, 1 = <unk>, 2.. = Gemma tokens
+
+
+class ChunkResult(NamedTuple):
+    """Greedy CTC result of one chunk: the text and the best path it was decoded from (no tensors).
+
+    `units` is the collapsed path without blanks (<unk> kept, so it matches the path); unit i was emitted on encoder
+    frames `first[i]..last[i]` (inclusive, relative to the chunk). `frames` is the number of valid encoder frames.
+    """
+    text: str
+    units: tuple[int, ...]
+    first: tuple[int, ...]
+    last: tuple[int, ...]
+    frames: int
+
+
+def ctc_path(best: np.ndarray) -> tuple[tuple[int, ...], tuple[int, ...], tuple[int, ...]]:
+    """Collapse an argmax frame sequence like `quan_transcribe.model.greedy_decode`, keeping each unit's frames."""
+    best = np.asarray(best)
+    if best.size == 0:
+        return (), (), ()
+    starts = np.flatnonzero(np.concatenate(([True], best[1:] != best[:-1])))
+    ends = np.concatenate((starts[1:], [len(best)])) - 1
+    keep = best[starts] != BLANK
+    return (tuple(best[starts][keep].tolist()), tuple(starts[keep].tolist()), tuple(ends[keep].tolist()))
 
 
 class Engine(Protocol):
     def load(self) -> None: ...
     def warmup(self) -> None: ...
-    def transcribe(self, wav: np.ndarray) -> str: ...
+    def transcribe(self, wav: np.ndarray) -> ChunkResult: ...
+    def pieces(self) -> tuple[str, ...]:
+        """Unit id -> token piece ("" for blank and <unk>); called once after `load`."""
+        ...
 
 
 class QuanEngine:
@@ -56,10 +84,17 @@ class QuanEngine:
             torch.cuda.empty_cache()
         self.transcribe(np.zeros(int(self._warmup_seconds * SAMPLE_RATE), dtype=np.float32))
 
-    def transcribe(self, wav: np.ndarray) -> str:
-        # `_run` is the reference's batch decode step without `split_quiet` (which silently drops pieces <= 100 ms);
-        # chunking is the caller's job. decoder=None selects greedy CTC; beam_width is unused then.
-        return self._asr._run([wav], False, None, None, 1)[0]
+    def transcribe(self, wav: np.ndarray) -> ChunkResult:
+        # The reference's greedy batch decode step (`_run` with decoder=None) without `split_quiet` (which silently
+        # drops pieces <= 100 ms; chunking is the caller's job), keeping the best path for timestamps. The text is
+        # decoded from the same units as `_run`, so it equals the baseline.
+        logits, lens = self._asr._forward([wav], False, None)
+        frames = int(lens[0])
+        units, first, last = ctc_path(logits[0, :frames].argmax(-1).cpu().numpy())
+        return ChunkResult(self._asr.decode_units(list(units)), units, first, last, frames)
+
+    def pieces(self) -> tuple[str, ...]:
+        return ("", "") + tuple(self._asr.tokenizer.convert_ids_to_tokens(self._asr.gemma_ids))
 
 
 def check_waveform(wav: np.ndarray) -> None:
@@ -86,6 +121,7 @@ class EngineWorker:
         self._thread = threading.Thread(target=self._main, name="quan-inference", daemon=True)
         self._state = EngineState.LOADING
         self._call_started: float | None = None
+        self.pieces: tuple[str, ...] = ()  # set before the worker becomes ready
         metrics.gauge_fn("ready", "1 when the model is loaded, warmed up and the worker is not hung.",
                          lambda: float(self.ready))
         metrics.gauge_fn("worker_busy", "1 while an inference call is running.",
@@ -121,7 +157,7 @@ class EngineWorker:
             self._thread.join(timeout)
         return not self._thread.is_alive()
 
-    async def transcribe(self, wav: np.ndarray) -> str:
+    async def transcribe(self, wav: np.ndarray) -> ChunkResult:
         check_waveform(wav)
         fut: concurrent.futures.Future = concurrent.futures.Future()
         self._queue.put((wav, fut))
@@ -139,6 +175,7 @@ class EngineWorker:
         t0 = time.monotonic()
         try:
             self._engine.load()
+            self.pieces = tuple(self._engine.pieces())
             self._warmup()
         except Exception:
             log(logging.ERROR, "engine.load_failed", exc_info=True)
@@ -159,7 +196,7 @@ class EngineWorker:
                 continue
             self._call_started = started = time.monotonic()
             try:
-                text = self._engine.transcribe(wav)
+                result = self._engine.transcribe(wav)
             except Exception as e:
                 self._call_started = None
                 log(logging.ERROR, "engine.inference_failed", exc_info=True, samples=len(wav))
@@ -171,7 +208,7 @@ class EngineWorker:
             else:
                 self._call_started = None
                 self._metrics.observe("infer_seconds", "Duration of one inference call.", time.monotonic() - started)
-                fut.set_result(text)
+                fut.set_result(result)
             finally:
                 wav = item = fut = err = None  # idle worker must not pin completed audio or failure tracebacks
         self._set_state(EngineState.STOPPED)
