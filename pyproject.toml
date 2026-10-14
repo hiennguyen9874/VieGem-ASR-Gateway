@@ -1,0 +1,39 @@
+[project]
+name = "quan-transcribe-deploy"
+version = "0.0.0"
+description = "OpenAI-compatible (scoped) serving for QUAN-Transcribe-1.0"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    # Inference code pinned to an exact commit (docs/baseline.vi.md, assets/manifest.json).
+    "quan-transcribe @ git+https://github.com/qnguyen3/QUAN-Transcribe@88ddcd2130a3c355d081bc002439f29e5e849060",
+    "torch==2.14.1",
+    "transformers==5.19.0",
+    "huggingface_hub",
+    "safetensors",
+    "numpy",
+    "soundfile>=0.12",
+    "soxr",
+]
+
+[dependency-groups]
+dev = [
+    "pytest",
+    # Pinned SDK used to verify the API contract (docs/api-contract.vi.md).
+    "openai==3.31.0",
+]
+
+[tool.uv]
+package = false
+
+[tool.uv.sources]
+torch = { index = "pytorch-cu126" }
+
+[[tool.uv.index]]
+name = "pytorch-cu126"
+url = "https://download.pytorch.org/whl/cu126"
+explicit = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+markers = ["gpu: needs a CUDA GPU and staged model assets (scripts/stage_models.py)"]

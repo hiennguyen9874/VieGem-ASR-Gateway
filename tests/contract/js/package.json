@@ -1,0 +1,13 @@
+{
+  "name": "quan-deploy-contract-js",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "tsc --noEmit -p . && node --test"
+  },
+  "devDependencies": {
+    "openai": "7.33.0",
+    "typescript": "5.9.3",
+    "@types/node": "24.10.1"
+  }
+}
