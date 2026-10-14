@@ -73,7 +73,7 @@ def gpu() -> str:
 
 
 def wait_ready(cid: str, timeout: float = 600) -> None:
-    probe = "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/ready', timeout=4)"
+    probe = "import urllib.request; urllib.request.urlopen('http://127.0.0.1:18000/ready', timeout=4)"
     deadline = time.monotonic() + timeout
     while docker("exec", cid, "python", "-c", probe, check=False).returncode != 0:
         state = json.loads(docker("inspect", cid).stdout)[0]["State"]
@@ -100,7 +100,7 @@ body = (f'--{b}\\r\\nContent-Disposition: form-data; name="model"\\r\\n\\r\\nqua
         f'--{b}\\r\\nContent-Disposition: form-data; name="stream"\\r\\n\\r\\ntrue\\r\\n'
         f'--{b}\\r\\nContent-Disposition: form-data; name="file"; filename="a.wav"\\r\\n\\r\\n').encode()
 body += buf.getvalue() + f'\\r\\n--{b}--\\r\\n'.encode()
-req = urllib.request.Request('http://127.0.0.1:8000/v1/audio/transcriptions', data=body, method='POST', headers={
+req = urllib.request.Request('http://127.0.0.1:18000/v1/audio/transcriptions', data=body, method='POST', headers={
     'Authorization': 'Bearer ' + os.environ['OPENAI_API_KEY'], 'Content-Type': f'multipart/form-data; boundary={b}'})
 with urllib.request.urlopen(req, timeout=600) as r:
     for line in r:
@@ -125,7 +125,7 @@ def running_container(image):
 
 def test_offline_ready_and_smoke(image):
     with running_container(image) as cid:
-        r = sidecar(cid, image, "/w/scripts/smoke_server.py", "--base-url", "http://127.0.0.1:8000")
+        r = sidecar(cid, image, "/w/scripts/smoke_server.py", "--base-url", "http://127.0.0.1:18000")
         assert r.returncode == 0, r.stdout[-4000:] + r.stderr[-4000:]
         report = json.loads(r.stdout)
         report["image"] = json.loads(docker("inspect", image).stdout)[0]["Id"]

@@ -34,7 +34,7 @@ CUDA_VISIBLE_DEVICES=<gpu> HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 uv run --offl
 curl -s localhost:18080/ready                 # {"status":"ready"} sau khi load + warm-up (~15 s)
 ```
 
-Ví dụ local dùng port `18080`; chọn port khác nếu đang bị chiếm (port `8000` đã có service trên host này).
+Ví dụ local dùng port `18080`; chọn port khác nếu đang bị chiếm (port `8000` trên host này đã có service khác, nên mặc định dùng `18000`).
 
 Luôn `--workers 1`: muốn dùng nhiều GPU thì chạy nhiều process (mỗi process một `CUDA_VISIBLE_DEVICES`, một port)
 sau load balancer. Cần `ffmpeg` trên `PATH`.
@@ -101,7 +101,7 @@ uv run scripts/stage_models.py                              # trên host: ./mode
 mkdir -p secrets && python3 -c "import secrets; print(secrets.token_urlsafe(32))" > secrets/quan_api_keys
 sudo chown 10001 secrets/quan_api_keys && sudo chmod 0400 secrets/quan_api_keys   # đọc được bởi user trong container
 QUAN_GPU=<gpu> docker compose up -d --build
-OPENAI_API_KEY=$(sudo cat secrets/quan_api_keys) uv run scripts/smoke_server.py --base-url http://127.0.0.1:8000
+OPENAI_API_KEY=$(sudo cat secrets/quan_api_keys) uv run scripts/smoke_server.py --base-url http://127.0.0.1:18000
 ```
 
 `compose.yaml`: rootfs read-only + tmpfs `/tmp`, `HF_HUB_OFFLINE=1`, port chỉ bind `127.0.0.1`, `stop_grace_period:
@@ -113,7 +113,7 @@ host có Docker + NVIDIA Container Toolkit.
 ## 6. Reverse proxy và TLS
 
 Gateway không làm TLS, rate limit theo client hay CORS. Đặt sau reverse proxy, ví dụ nginx cho server local
-(port `18080`; đổi upstream thành port `8000` nếu dùng compose mặc định):
+(port `18080`; đổi upstream thành port `18000` nếu dùng compose mặc định):
 
 ```nginx
 location /v1/ {

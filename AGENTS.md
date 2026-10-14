@@ -76,7 +76,7 @@ QUAN_GPU=<free gpu> uv run pytest tests/container   # needs docker + NVIDIA Cont
 - Never forward waveforms shorter than 161 samples at 16 kHz (the frontend crashes); see docs/baseline.vi.md §7.
   Chunk audio only with `app/chunking.split`; decode client audio only with `AudioIngress.decode` (FFmpeg on PATH,
   needed by the CPU tests too). Never pass client filenames, paths or URLs to FFmpeg.
-- The host is shared: port 8000 is taken by another service here; pick a free port for local servers.
+- The host is shared: port 8000 is taken by another service here, so the default is 18000; pick a free port for local servers.
 - Transcription endpoints never call the model or the worker: lane per request, `run_chunks`, `Joiner`.
   `QUAN_GPU` (compose, container test) and `QUAN_TEST_*` (JS server test) are not server config: do not export
   them in a shell that starts the server; an unknown `QUAN_*` variable aborts startup.

@@ -37,10 +37,10 @@ ENV PATH=/srv/.venv/bin:$PATH PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 \
     QUAN_MODELS_DIR=/models HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 HF_HOME=/tmp/hf HOME=/tmp
 USER 10001:10001
 WORKDIR /srv
-EXPOSE 8000
+EXPOSE 18000
 # Liveness only (/health): 503 when the worker hangs or failed to load. Docker does not restart an unhealthy
 # container by itself; see README "Recovery".
 HEALTHCHECK --interval=30s --timeout=5s --start-period=300s --retries=3 \
-    CMD ["python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=4)"]
-CMD ["uvicorn", "--factory", "app.main:create_app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1", \
+    CMD ["python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:18000/health', timeout=4)"]
+CMD ["uvicorn", "--factory", "app.main:create_app", "--host", "0.0.0.0", "--port", "18000", "--workers", "1", \
      "--no-access-log", "--timeout-graceful-shutdown", "30"]

@@ -1,7 +1,7 @@
 """Smoke test of a running gateway (local process or container): readiness, models, json/text/SSE on the fixtures,
 transcripts compared with the offline inference baseline, timings -> JSON report.
 
-    OPENAI_API_KEY=<gateway key> uv run scripts/smoke_server.py --base-url http://127.0.0.1:8000 \
+    OPENAI_API_KEY=<gateway key> uv run scripts/smoke_server.py --base-url http://127.0.0.1:18000 \
         --out docs/baseline/server.json
 
 Standard library only, so it runs from the host against a container port as well. Checks (exit 1 if one fails):
@@ -121,7 +121,7 @@ def git_commit() -> str | None:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--base-url", default="http://127.0.0.1:8000")
+    ap.add_argument("--base-url", default="http://127.0.0.1:18000")
     ap.add_argument("--api-key-env", default="OPENAI_API_KEY", help="environment variable holding the gateway key")
     ap.add_argument("--ready-timeout", type=float, default=600.0)
     ap.add_argument("--timeout", type=float, default=600.0, help="per HTTP request")
