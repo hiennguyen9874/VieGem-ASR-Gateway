@@ -48,7 +48,7 @@ Auth: `Authorization: Bearer <key>`. Body `multipart/form-data`.
 
 | Field | Quy tắc |
 |---|---|
-| `file` | Bắt buộc. Tên file client chỉ để log/debug, không dùng làm path. Định dạng theo M2 (FFmpeg) |
+| `file` | Bắt buộc, đúng một part. Tên file client bị bỏ qua (không dùng làm path, không log). Định dạng nhận diện theo nội dung, không theo đuôi: WAV (PCM/float/A-law/µ-law), FLAC, MP3/MPGA, MP4/M4A (AAC, ALAC), OGG (Vorbis, Opus), WEBM/Matroska (Opus, Vorbis). Container/codec khác (ADTS `.aac`, MPEG-PS, playlist, ADPCM, …) → 400 `invalid_audio`. Mọi sample rate/số kênh được đưa về mono 16 kHz (downmix của FFmpeg) |
 | `model` | Bắt buộc; thiếu → 400 `missing_required_parameter`; không phục vụ → 404 `model_not_found` (`param: "model"`) |
 | `language` | Không gửi hoặc `vi`; khác → 400 `unsupported_language`. Không gửi **không** có nghĩa là auto-detect |
 | `temperature` | Không gửi hoặc `0` (decode tất định, greedy); khác → 400 `unsupported_parameter` |
@@ -66,8 +66,17 @@ Kết quả:
 - `text` → `200 text/plain; charset=utf-8`, body đúng bằng transcript, không thêm newline. SDK trả nguyên body.
 - Text: chữ thường tiếng Việt, không dấu câu, số viết bằng chữ (output nguyên bản của model). Nhiều chunk nối bằng
   một dấu cách; chunk rỗng không sinh dấu cách.
-- Silence/clip ngắn: audio decode hợp lệ nhưng ≤ 1,600 mẫu ở 16 kHz (≤ 100 ms), kể cả 0 mẫu → `text: ""`, không
-  gọi model (frontend crash dưới 161 mẫu; xem baseline §7). Silence dài vẫn qua model và cho `""` (đã đo). Chốt ở M2.
+- Silence/clip ngắn (chốt ở M2, `app/chunking.py`): audio decode hợp lệ nhưng ≤ 1,600 mẫu ở 16 kHz (≤ 100 ms), kể
+  cả 0 mẫu → `text: ""`, không gọi model (frontend crash dưới 161 mẫu; xem baseline §7). Silence dài vẫn qua model
+  và cho `""` (đã đo), không dùng ngưỡng biên độ.
+- Chunking: audio dài hơn `QUAN_MAX_CHUNK_SECONDS` (mặc định 30 s) được cắt tại điểm yên lặng nhất trong 5 s cuối
+  trước giới hạn; các chunk phủ liền toàn bộ audio (không bỏ silence, không bỏ đuôi), mỗi chunk > 100 ms. Text có
+  thể khác một lời gọi `transcribe()` của reference trên cùng file vì điểm cắt khác.
+- Giới hạn (cấu hình, xem `app/config.py`): toàn bộ body ≤ `QUAN_MAX_UPLOAD_BYTES` (25 MiB) → 413, kể cả upload
+  chunked; ≤ 32 part, mỗi field không phải file ≤ 8 KiB (→ 413), field phải là UTF-8; audio sau decode ≤
+  `QUAN_MAX_AUDIO_SECONDS` (1800 s) → 400 `audio_too_long`; decode quá `QUAN_DECODE_TIMEOUT_SECONDS` → 400
+  `invalid_audio`; tổng upload/decode/queue/infer quá `QUAN_REQUEST_TIMEOUT_SECONDS` → 503 `request_timeout`; hết
+  slot decode hoặc spool disk → 429 `server_busy`. Stream bị cụt được decode phần đọc được nếu FFmpeg đọc được.
 
 ## 5. SSE (`stream=true`)
 
@@ -150,14 +159,14 @@ Envelope (ví dụ `examples/error.json`):
 
 | HTTP | `type` | `code` |
 |---|---|---|
-| 400 | `invalid_request_error` | `missing_required_parameter`, `unsupported_parameter`, `invalid_value`, `unsupported_language`, `unsupported_response_format`, `invalid_audio` (không decode được), `audio_too_long` |
+| 400 | `invalid_request_error` | `missing_required_parameter`, `unsupported_parameter`, `invalid_value` (kể cả multipart sai/quá nhiều field), `unsupported_language`, `unsupported_response_format`, `invalid_audio` (`param: "file"`: không decode được, định dạng không cho phép, decode quá thời gian, sample không hữu hạn), `audio_too_long` (`param: "file"`) |
 | 401 | `authentication_error` | `invalid_api_key` (thiếu hoặc sai) |
 | 404 | `invalid_request_error` | `model_not_found`, `not_found` (route không tồn tại; chỉ sau khi auth hợp lệ, nếu không là 401) |
 | 405 | `invalid_request_error` | `method_not_allowed` |
-| 413 | `invalid_request_error` | `request_too_large` (body/file vượt giới hạn, kiểm tra trước multipart parse) |
-| 429 | `rate_limit_error` | `server_busy` (queue/concurrency đầy); kèm `Retry-After` khi có ước lượng |
+| 413 | `invalid_request_error` | `request_too_large` (body vượt giới hạn, kiểm tra trước multipart parse; hoặc một form field vượt 8 KiB) |
+| 429 | `rate_limit_error` | `server_busy` (queue/concurrency/decode slot/spool disk đầy); kèm `Retry-After` khi có ước lượng |
 | 500 | `server_error` | `inference_failed`, `internal_error` (lỗi không lường trước, không lộ chi tiết) |
-| 503 | `server_error` | `model_not_ready` (đang load/recover, `Retry-After: 5`), `shutting_down` (đang drain), `request_timeout` (job quá hạn khi chờ hoặc đang chạy; call đang chạy vẫn giữ worker/budget tới khi kết thúc) |
+| 503 | `server_error` | `model_not_ready` (đang load/recover, `Retry-After: 5`), `shutting_down` (đang drain), `request_timeout` (hết budget tổng của request ở upload, decode, chờ queue hoặc đang chạy; call đang chạy vẫn giữ worker/budget tới khi kết thúc) |
 
 Mọi response (kể cả lỗi) có header `x-request-id: req_…`; Python SDK đưa giá trị này vào `request_id` của exception; JS SDK dùng `requestID`.
 
@@ -168,7 +177,7 @@ cần restart process), `GET /ready` (readiness, không cần auth; 200 `{"statu
 Không bao giờ trả FastAPI 422 `{"detail": …}`. Message không chứa transcript, audio, token hay đường dẫn nội bộ.
 SDK ánh xạ status → class (`BadRequestError`, `AuthenticationError`, `NotFoundError`, …) và đọc `code`/`param`/`type`
 từ envelope. `examples/service_errors.json` được kiểm thử bằng cả Python và JS SDK cho các status/code M1,
-`Retry-After` và request ID. API key phải có ít nhất 16 ký tự ASCII printable, không có khoảng trắng.
+`Retry-After` và request ID (M2 thêm `invalid_audio`, `audio_too_long`, 413 cho form field). API key phải có ít nhất 16 ký tự ASCII printable, không có khoảng trắng.
 
 ## 8. Kiểm tra contract
 

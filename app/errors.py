@@ -54,8 +54,17 @@ def not_found() -> APIError:
     return APIError(404, "invalid_request_error", "not_found", "Not found.")
 
 
-def request_too_large(limit_bytes: int) -> APIError:
-    return APIError(413, "invalid_request_error", "request_too_large", f"Request body exceeds {limit_bytes} bytes.")
+def request_too_large(limit_bytes: int, what: str = "Request body") -> APIError:
+    return APIError(413, "invalid_request_error", "request_too_large", f"{what} exceeds {limit_bytes} bytes.")
+
+
+def invalid_audio(message: str = "Audio file could not be decoded.") -> APIError:
+    return APIError(400, "invalid_request_error", "invalid_audio", message, "file")
+
+
+def audio_too_long(limit_seconds: float) -> APIError:
+    return APIError(400, "invalid_request_error", "audio_too_long", f"Audio is longer than {limit_seconds:g} seconds.",
+                    "file")
 
 
 def server_busy(retry_after: int | None = None) -> APIError:
@@ -80,7 +89,7 @@ def shutting_down() -> APIError:
 
 
 def request_timeout() -> APIError:
-    return APIError(503, "server_error", "request_timeout", "Request timed out waiting for inference.")
+    return APIError(503, "server_error", "request_timeout", "Request timed out.")
 
 
 def install_handlers(app: FastAPI) -> None:

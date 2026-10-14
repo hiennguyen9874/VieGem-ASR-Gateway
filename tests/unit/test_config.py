@@ -20,9 +20,11 @@ def test_parses_typed_values():
     cfg = Config.from_env({
         "QUAN_API_KEYS": f" {KEY} , {'j' * 20} ", "QUAN_WHISPER_ALIAS": "true", "QUAN_QUEUE_MAX_JOBS": "8",
         "QUAN_MAX_CHUNK_SECONDS": "20.5", "QUAN_MODELS_DIR": "/srv/models", "QUAN_LOG_LEVEL": "debug",
+        "QUAN_SPOOL_DIR": "/var/spool/quan",
     })
     assert cfg.api_keys == (KEY, "j" * 20) and cfg.whisper_alias is True and cfg.queue_max_jobs == 8
     assert cfg.max_chunk_seconds == 20.5 and cfg.models_dir == Path("/srv/models") and cfg.log_level == "DEBUG"
+    assert cfg.max_chunk_samples == 328000 and cfg.spool_dir == Path("/var/spool/quan")
 
 
 def test_api_keys_file(tmp_path):
@@ -55,6 +57,8 @@ def test_api_keys_file(tmp_path):
     {"QUAN_API_KEYS": KEY, "QUAN_MAX_TURN_SECONDS": "1000", "QUAN_QUEUE_MAX_BUFFERED_SECONDS": "900"},
     {"QUAN_API_KEYS": KEY, "QUAN_QUEUE_MAX_JOBS_PER_LANE": "10", "QUAN_QUEUE_MAX_JOBS": "5"},
     {"QUAN_API_KEYS": KEY, "QUAN_MAX_SESSIONS": "40"},
+    {"QUAN_API_KEYS": KEY, "QUAN_MAX_CHUNK_SECONDS": "0.5"},  # splitter needs room above the short-clip floor
+    {"QUAN_API_KEYS": KEY, "QUAN_MAX_UPLOAD_BYTES": "1000", "QUAN_MAX_SPOOL_BYTES": "999"},
 ])
 def test_invalid_config_fails_startup(env):
     with pytest.raises(ConfigError) as e:

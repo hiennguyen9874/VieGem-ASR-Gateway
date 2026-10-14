@@ -179,3 +179,11 @@ def test_websocket_handshake_refused_without_key(denial_extension):
 def test_real_engine_requires_staged_models_dir(tmp_path: Path):
     with pytest.raises(ConfigError):
         create_app(config(models_dir=tmp_path / "missing"))
+
+
+def test_startup_requires_spool_dir_and_ffmpeg(tmp_path: Path, monkeypatch):
+    with pytest.raises(ConfigError, match="QUAN_SPOOL_DIR"):
+        create_app(config(spool_dir=tmp_path / "missing"), FakeEngine())
+    monkeypatch.setenv("PATH", str(tmp_path))
+    with pytest.raises(ConfigError, match="ffmpeg"):
+        create_app(config(), FakeEngine())

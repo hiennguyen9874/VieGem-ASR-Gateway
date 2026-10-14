@@ -1,7 +1,7 @@
 # Deploy QUAN-Transcribe-1.0
 
 - Design: docs/deployment-design.vi.md
-- Plan: docs/implementation-plan.vi.md (M1 done)
+- Plan: docs/implementation-plan.vi.md (M2 done)
 - Baseline (M0 results, pins, measurements): docs/baseline.vi.md
 - API contract (pinned OpenAI SDK profile, payloads, error codes): docs/api-contract.vi.md
 
@@ -12,6 +12,8 @@ app/quan_loader.py         # load QUAN from staged local dirs only (no Hub resol
 app/config.py              # typed QUAN_* env config, validated at startup (no default API key)
 app/engine.py              # QuanEngine adapter + EngineWorker: the single thread that runs the model
 app/scheduler.py           # bounded fair queue (lanes = requests/sessions, jobs = chunks) feeding the worker
+app/audio.py               # multipart ingress (body limit before parser, bounded spool) + sandboxed FFmpeg decode
+app/chunking.py            # quiet-point splitter: contiguous spans, <=100 ms audio -> no chunk (empty transcript)
 app/main.py                # FastAPI app factory: lifespan, /health, /ready, /metrics, auth, request ids
 app/errors.py, schemas.py  # OpenAI error envelope + status/code mapping
 app/observability.py       # JSON logs + Prometheus-style metrics (metadata only)
@@ -23,9 +25,11 @@ docs/baseline/*.json       # saved smoke reports (online / offline)
 tests/
   unit/                    # CPU: manifests and pins, config, app over real Uvicorn with a fake engine
   scheduler/               # CPU: scheduler/worker gate with a fake engine (serialization, bounds, fairness, cancel)
+  audio/                   # CPU + ffmpeg: formats, hostile inputs, decode bounds, multipart limits, temp cleanup
   fake_engine.py           # engine stand-in shared by CPU tests
   contract/                # CPU: examples/ parsed by pinned OpenAI Python SDK; js/ for the JS SDK
-  gpu/                     # GPU: local loader == reference loader (exact logits, needs network); real engine
+  gpu/                     # GPU: local loader == reference loader (exact logits, needs network); real engine;
+                           #      decode -> chunk -> engine pipeline
   fixtures/                # small committed fixtures + manifest.json (hashes, references, license)
 models/                    # staged assets (gitignored)
 fixtures-large/            # large fixtures, e.g. vi_long.wav (gitignored)
@@ -58,6 +62,8 @@ QUAN_API_KEYS=<key> CUDA_VISIBLE_DEVICES=<free gpu> uv run uvicorn --factory app
 - All inference on one model instance must be serialized (`QuanCTC._acts` is mutable hook state): only
   `app/engine.py` calls QUAN, and only via `Scheduler` lanes; endpoints never touch the model or the worker.
 - Never forward waveforms shorter than 161 samples at 16 kHz (the frontend crashes); see docs/baseline.vi.md §7.
+  Chunk audio only with `app/chunking.split`; decode client audio only with `AudioIngress.decode` (FFmpeg on PATH,
+  needed by the CPU tests too). Never pass client filenames, paths or URLs to FFmpeg.
 - Contract changes: update `tests/contract/examples/` plus both SDK tests, then docs/api-contract.vi.md. Omit
   optional fields rather than sending `null` (the JS types reject `null` for several of them).
 - Never commit or log HF_TOKEN, API keys, audio or transcripts.

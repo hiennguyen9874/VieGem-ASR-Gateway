@@ -155,10 +155,11 @@ def test_service_examples_match_gateway_errors():
     from app import errors
 
     actual = [
-        errors.invalid_request("invalid_value", "Invalid request."), errors.invalid_api_key(),
+        errors.invalid_request("invalid_value", "Invalid request."), errors.invalid_audio(),
+        errors.audio_too_long(1800), errors.invalid_api_key(),
         errors.model_not_found("unknown"), errors.not_found(),
         errors.APIError(405, "invalid_request_error", "method_not_allowed", "Method not allowed."),
-        errors.request_too_large(1024), errors.server_busy(1), errors.inference_failed(),
+        errors.request_too_large(1024), errors.request_too_large(8192, what="Form field"), errors.server_busy(1), errors.inference_failed(),
         errors.internal_error(), errors.model_not_ready(), errors.shutting_down(), errors.request_timeout(),
     ]
     assert [{"status": e.status, "headers": e.headers, **e.body()} for e in actual] == json.loads(

@@ -18,6 +18,7 @@ from fastapi.responses import PlainTextResponse
 from starlette.datastructures import MutableHeaders
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
+from app.audio import AudioIngress
 from app.config import Config, ConfigError
 from app.engine import Engine, EngineWorker, QuanEngine
 from app.errors import APIError, install_handlers, internal_error, invalid_api_key, model_not_ready, shutting_down
@@ -37,13 +38,20 @@ def create_app(config: Config | None = None, engine: Engine | None = None) -> Fa
             raise ConfigError(f"QUAN_MODELS_DIR is not a directory (run scripts/stage_models.py): {config.models_dir}")
         engine = QuanEngine(config.models_dir, config.device, warmup_seconds=config.max_chunk_seconds)
 
+    if not config.spool_dir.is_dir():
+        raise ConfigError(f"QUAN_SPOOL_DIR is not a directory: {config.spool_dir}")
     metrics = Metrics()
+    try:
+        audio = AudioIngress(config, metrics)
+    except FileNotFoundError as e:
+        raise ConfigError(str(e)) from None
     worker = EngineWorker(engine, config.infer_hang_seconds, metrics)
     scheduler = Scheduler(worker, config, metrics)
 
     @asynccontextmanager
     async def lifespan(_: FastAPI):
         # The model loads on the worker thread; /health answers meanwhile and /ready turns true after warm-up.
+        audio.start()
         worker.start()
         scheduler.start()
         log(logging.INFO, "server.started")
@@ -53,12 +61,14 @@ def create_app(config: Config | None = None, engine: Engine | None = None) -> Fa
             log(logging.INFO, "server.draining")
             drained = await scheduler.close(config.shutdown_drain_seconds)
             stopped = await asyncio.to_thread(worker.stop, WORKER_STOP_SECONDS)
+            audio.stop()
             level = logging.INFO if drained and stopped else logging.ERROR
             # A worker stuck in a call cannot be interrupted; it is a daemon thread and dies with the process.
             log(level, "server.stopped", drained=drained, worker_stopped=stopped)
 
     app = FastAPI(lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
     app.state.config, app.state.metrics, app.state.worker, app.state.scheduler = config, metrics, worker, scheduler
+    app.state.audio = audio
     install_handlers(app)
     app.add_middleware(GatewayMiddleware, api_keys=config.api_keys, metrics=metrics)
 

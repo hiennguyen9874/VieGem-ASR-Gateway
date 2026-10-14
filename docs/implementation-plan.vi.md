@@ -76,11 +76,19 @@ scheduler cho đúng text baseline M0 offline (`tests/gpu/test_engine.py`). Chư
 
 ### M2 — Audio ingress và chunking (P0, sau M1 skeleton)
 
-- [ ] `app/audio.py`: bounded spool/temp, kiểm tra ingress body trước parser, cleanup success/error/disconnect; filenames do server tạo.
-- [ ] FFmpeg subprocess ngoài event loop, format/protocol restrictions, decode timeout, bounded concurrency và stderr. Read PCM output theo block, cắt khi vượt max decoded samples thay vì decode xong mới kiểm tra.
-- [ ] Normalize mono 16 kHz float32, kiểm tra finite samples; không cho client chọn file path hoặc URL. Áp dụng tổng budget cho upload/decode/queue/infer.
-- [ ] `app/chunking.py`: split tại quiet point, max duration cấu hình, lưu start/end sample; preserve audio coverage hoặc ghi rõ silence removal. Xử lý tail ngắn có chủ đích.
-- [ ] Policy empty/silence/too-short; test frontend minimum samples thật. R1 không bắt buộc acoustic VAD, có thể dùng quiet splitter deterministic.
+Trạng thái: **gate đạt** — `tests/audio/` (FFmpeg thật + Uvicorn thật, CPU), `tests/unit/test_chunking.py`; pipeline
+decode → splitter → engine thật trong `tests/gpu/test_audio_pipeline.py`. Chưa có endpoint transcription (M3 dùng
+`app.state.audio.receive/decode` và `chunking.split`).
+
+- [x] `app/audio.py`: bounded spool/temp, kiểm tra ingress body trước parser, cleanup success/error/disconnect; filenames do server tạo. *(Body đếm byte trước khi vào `python-multipart`, cả chunked không Content-Length; Content-Length khai báo quá → 413 trước khi đọc body. ≤ 32 part, field ≤ 8 KiB, ≤ 8 header/part; đúng một part `file`. Spool vào thư mục riêng 0700 (`QUAN_SPOOL_DIR`), tên `mkstemp`, tổng `QUAN_MAX_SPOOL_BYTES` cho mọi upload đang chạy → 429; xóa khi thoát context và xóa cả thư mục lúc shutdown.)*
+- [x] FFmpeg subprocess ngoài event loop, format/protocol restrictions, decode timeout, bounded concurrency và stderr. Read PCM output theo block, cắt khi vượt max decoded samples thay vì decode xong mới kiểm tra. *(argv, env chỉ có `PATH` (không lộ API key/HF_TOKEN); `-protocol_whitelist file`, demuxer allowlist wav/flac/mp3/mov(mp4,m4a)/ogg/matroska(webm), decoder allowlist; HLS/ffconcat bị từ chối, không mở mạng. Kill + reap ở mọi đường thoát, kể cả cancel. Decode timeout → 400 `invalid_audio`; hết deadline request → 503 `request_timeout`; chờ slot quá `QUAN_QUEUE_TIMEOUT_SECONDS` → 429. Giữ tối đa 4 KiB stderr.)*
+- [x] Normalize mono 16 kHz float32, kiểm tra finite samples; không cho client chọn file path hoặc URL. Áp dụng tổng budget cho upload/decode/queue/infer. *(`receive`/`decode` nhận cùng `deadline` monotonic mà M3 truyền tiếp cho `Lane.submit`. Stream bị cụt (mp3/ogg/webm) decode phần đọc được; m4a mất `moov` → `invalid_audio`.)*
+- [x] `app/chunking.py`: split tại quiet point, max duration cấu hình, lưu start/end sample; preserve audio coverage hoặc ghi rõ silence removal. Xử lý tail ngắn có chủ đích. *(Spans liền nhau phủ đúng `[0, n)`, không bỏ silence. Cắt ở giữa cửa sổ 50 ms năng lượng thấp nhất trong 5 s cuối trước giới hạn (hòa → cửa sổ muộn nhất); điểm cắt bị giới hạn để chunk cuối > 1,600 mẫu, không bỏ đuôi như `split_quiet`. `QUAN_MAX_CHUNK_SECONDS` ≥ 1.)*
+- [x] Policy empty/silence/too-short; test frontend minimum samples thật. R1 không bắt buộc acoustic VAD, có thể dùng quiet splitter deterministic. *(≤ 1,600 mẫu → không có chunk, transcript `""`, không gọi model. Chunk nhỏ nhất được forward (1,601 mẫu) chạy qua frontend thật cho `""`; silence 2 s qua model cho `""`.)*
+
+Metrics thêm: `uploads_total{outcome}`, `decodes_total{outcome}` (khác `ok` là decode failure), `decode_seconds`,
+`active_decodes`, `spool_bytes`. Message `request_timeout` đổi thành "Request timed out." vì giờ áp dụng cả
+upload/decode.
 
 **Gate:** WAV/FLAC/MP3/M4A/OGG/WEBM và sample-rate/stereo tests; corrupt/truncated/decode-bomb/oversize/timeout không vượt budget, không còn subprocess/temp files. Kiểm tra multipart chunked body và field flooding.
 
@@ -160,7 +168,7 @@ tests/
 | Upload/duration/queue/PCM/session budgets | M1, refine M7 | Config bắt buộc hữu hạn; số production từ benchmark |
 | Gateway auth và browser access | M1/M5 | Bearer server-to-server, browser public ngoài MVP |
 | LM và text postprocessing | M0/M4 | Greedy, giữ text nguyên bản; LM opt-in sau đo |
-| SSE/JSON segmentation policy | M2 | Shared quiet splitter, deterministic separator |
+| SSE/JSON segmentation policy | M2 (chốt) | `app/chunking.split` dùng chung; nối chunk bằng một dấu cách, chunk rỗng không sinh dấu cách |
 | Timestamp accuracy/word definition | M4 | Whitespace units, annotated acceptance set |
 | Ưu tiên R2 hay R3a | Sau R1 | R2 trước; đổi nếu mic client là mục tiêu chính |
 

@@ -91,7 +91,7 @@ class Scheduler:
         self._max_jobs = config.queue_max_jobs
         self._max_jobs_per_lane = config.queue_max_jobs_per_lane
         self._max_samples = config.queue_max_buffered_samples
-        self._max_chunk_samples = int(config.max_chunk_seconds * SAMPLE_RATE)
+        self._max_chunk_samples = config.max_chunk_samples
         self._queue_timeout = config.queue_timeout_seconds
         self._live_ratio = config.live_priority_ratio
         self._rings = {JobKind.LIVE: deque(), JobKind.FILE: deque()}  # lanes with queued jobs, round-robin order

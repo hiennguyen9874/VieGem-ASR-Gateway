@@ -8,6 +8,7 @@ There is no default API key. Gateway API keys are separate from `HF_TOKEN` (stag
 import dataclasses
 import math
 import os
+import tempfile
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -15,6 +16,7 @@ from pathlib import Path
 SAMPLE_RATE = 16000  # QUAN input rate; queue budgets are counted in 16 kHz samples
 PREFIX = "QUAN_"
 MIN_API_KEY_LENGTH = 16
+MIN_CHUNK_SECONDS = 1.0
 
 
 class ConfigError(ValueError):
@@ -30,8 +32,10 @@ class Config:
     log_level: str = "INFO"
 
     # Upload and decode (M2)
-    max_upload_bytes: int = 25 * 1024 * 1024
-    max_audio_seconds: float = 1800.0
+    max_upload_bytes: int = 25 * 1024 * 1024  # whole request body, checked before multipart parsing
+    max_spool_bytes: int = 200 * 1024 * 1024  # temp disk held by all uploads in flight
+    spool_dir: Path = Path(tempfile.gettempdir())  # a private 0700 subdirectory is created inside
+    max_audio_seconds: float = 1800.0  # decoded duration; FFmpeg is stopped as soon as it is exceeded
     max_chunk_seconds: float = 30.0
     decode_timeout_seconds: float = 60.0
     max_concurrent_decodes: int = 2
@@ -60,6 +64,14 @@ class Config:
     def queue_max_buffered_samples(self) -> int:
         return int(self.queue_max_buffered_seconds * SAMPLE_RATE)
 
+    @property
+    def max_chunk_samples(self) -> int:
+        return int(self.max_chunk_seconds * SAMPLE_RATE)
+
+    @property
+    def max_audio_samples(self) -> int:
+        return int(self.max_audio_seconds * SAMPLE_RATE)
+
     def __post_init__(self) -> None:
         if not self.api_keys:
             raise ConfigError("QUAN_API_KEYS (or QUAN_API_KEYS_FILE) must define at least one key")
@@ -78,6 +90,11 @@ class Config:
                 raise ConfigError(f"{PREFIX}{f.name.upper()} must be a finite number > 0, got {value!r}")
         if self.max_chunk_seconds > self.max_audio_seconds:
             raise ConfigError("QUAN_MAX_CHUNK_SECONDS must be <= QUAN_MAX_AUDIO_SECONDS")
+        if self.max_chunk_seconds < MIN_CHUNK_SECONDS:
+            # The splitter needs room to cut at a quiet point and keep every chunk above the short-clip floor.
+            raise ConfigError(f"QUAN_MAX_CHUNK_SECONDS must be >= {MIN_CHUNK_SECONDS}")
+        if self.max_spool_bytes < self.max_upload_bytes:
+            raise ConfigError("QUAN_MAX_SPOOL_BYTES must be >= QUAN_MAX_UPLOAD_BYTES")
         # A single job must fit the queue budget, otherwise it could never be admitted.
         for name in ("max_chunk_seconds", "max_turn_seconds"):
             if getattr(self, name) > self.queue_max_buffered_seconds:

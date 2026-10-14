@@ -396,11 +396,11 @@ def test_invalid_waveforms_never_reach_the_engine():
 @pytest.mark.parametrize("kind", [FILE, LIVE])
 @run_async
 async def test_chunk_limit_enforced_independently_of_queue_budget(kind):
-    async with serving(FakeEngine(), max_chunk_seconds=0.1) as (scheduler, _, _):
+    async with serving(FakeEngine(), max_chunk_seconds=1.0) as (scheduler, _, _):
         lane = scheduler.open_lane(kind)
-        assert await (await lane.submit(wav(1, 1600))) == "1"
+        assert await (await lane.submit(wav(1, 16000))) == "1"
         with pytest.raises(ValueError, match="max_chunk_seconds"):
-            await lane.submit(wav(2, 1601))
+            await lane.submit(wav(2, 16001))
         assert scheduler._jobs == 0 and scheduler._samples == 0
 
 
