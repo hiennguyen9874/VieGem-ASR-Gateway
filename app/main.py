@@ -1,0 +1,156 @@
+"""FastAPI gateway: lifespan (load/warm-up, drain), health/readiness, auth, request ids, error envelope.
+
+Run with one worker process per GPU (the model instance lives in this process):
+    uvicorn --factory app.main:create_app --workers 1 --no-access-log --timeout-graceful-shutdown 30
+"""
+
+import asyncio
+import hashlib
+import hmac
+import json
+import logging
+import time
+import uuid
+from contextlib import asynccontextmanager
+
+from fastapi import FastAPI
+from fastapi.responses import PlainTextResponse
+from starlette.datastructures import MutableHeaders
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
+
+from app.config import Config, ConfigError
+from app.engine import Engine, EngineWorker, QuanEngine
+from app.errors import APIError, install_handlers, internal_error, invalid_api_key, model_not_ready, shutting_down
+from app.observability import Metrics, configure_logging, log, request_id
+from app.scheduler import Scheduler
+from app.schemas import Status
+
+PUBLIC_PATHS = frozenset({"/health", "/ready"})  # probes; everything else needs an API key
+WORKER_STOP_SECONDS = 5.0
+
+
+def create_app(config: Config | None = None, engine: Engine | None = None) -> FastAPI:
+    config = config or Config.from_env()
+    configure_logging(config.log_level)
+    if engine is None:
+        if not config.models_dir.is_dir():
+            raise ConfigError(f"QUAN_MODELS_DIR is not a directory (run scripts/stage_models.py): {config.models_dir}")
+        engine = QuanEngine(config.models_dir, config.device, warmup_seconds=config.max_chunk_seconds)
+
+    metrics = Metrics()
+    worker = EngineWorker(engine, config.infer_hang_seconds, metrics)
+    scheduler = Scheduler(worker, config, metrics)
+
+    @asynccontextmanager
+    async def lifespan(_: FastAPI):
+        # The model loads on the worker thread; /health answers meanwhile and /ready turns true after warm-up.
+        worker.start()
+        scheduler.start()
+        log(logging.INFO, "server.started")
+        try:
+            yield
+        finally:
+            log(logging.INFO, "server.draining")
+            drained = await scheduler.close(config.shutdown_drain_seconds)
+            stopped = await asyncio.to_thread(worker.stop, WORKER_STOP_SECONDS)
+            level = logging.INFO if drained and stopped else logging.ERROR
+            # A worker stuck in a call cannot be interrupted; it is a daemon thread and dies with the process.
+            log(level, "server.stopped", drained=drained, worker_stopped=stopped)
+
+    app = FastAPI(lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
+    app.state.config, app.state.metrics, app.state.worker, app.state.scheduler = config, metrics, worker, scheduler
+    install_handlers(app)
+    app.add_middleware(GatewayMiddleware, api_keys=config.api_keys, metrics=metrics)
+
+    @app.get("/health", response_model=Status)
+    async def health():
+        """Liveness: fails only when a restart is needed (load/recovery failed, or an inference call hangs)."""
+        if not worker.healthy:
+            return APIError(503, "server_error", "unhealthy", "Inference worker needs a restart.").response()
+        return Status(status="ok")
+
+    @app.get("/ready", response_model=Status)
+    async def ready():
+        """Readiness: model loaded and warmed up, worker not recovering or hung, not draining."""
+        if scheduler.closing:
+            return shutting_down().response()
+        if not worker.ready:
+            return model_not_ready().response()
+        return Status(status="ready")
+
+    @app.get("/metrics", response_class=PlainTextResponse)
+    async def prometheus_metrics():
+        return PlainTextResponse(metrics.render(), media_type="text/plain; version=0.0.4")
+
+    return app
+
+
+class GatewayMiddleware:
+    """Request id (`x-request-id` header + log context), API key check, access log, last-resort 500 envelope.
+
+    Pure ASGI so it also guards WebSocket handshakes: a bad key is refused with HTTP 401 before accept.
+    """
+
+    def __init__(self, app: ASGIApp, api_keys: tuple[str, ...], metrics: Metrics):
+        self._app, self._metrics = app, metrics
+        self._digests = [hashlib.sha256(k.encode()).digest() for k in api_keys]
+
+    def _authorized(self, scope: Scope) -> bool:
+        header = next((v for k, v in scope["headers"] if k == b"authorization"), b"")
+        scheme, _, key = header.decode("latin-1").partition(" ")
+        if scheme.lower() != "bearer" or not key.strip():
+            return False
+        digest = hashlib.sha256(key.strip().encode("latin-1")).digest()
+        # Compare against every key so timing does not reveal which (if any) matched.
+        return sum(hmac.compare_digest(digest, d) for d in self._digests) > 0
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] not in ("http", "websocket"):
+            await self._app(scope, receive, send)
+            return
+        rid = f"req_{uuid.uuid4().hex}"
+        token = request_id.set(rid)
+        started = time.monotonic()
+        status: int | None = None
+
+        async def send_with_id(message: Message) -> None:
+            nonlocal status
+            if message["type"] in ("http.response.start", "websocket.http.response.start"):
+                status = message["status"]
+                MutableHeaders(scope=message).append("x-request-id", rid)
+            elif message["type"] == "websocket.accept":
+                status = 101
+                MutableHeaders(scope=message).append("x-request-id", rid)
+            await send(message)
+
+        try:
+            if scope["path"] not in PUBLIC_PATHS and not self._authorized(scope):
+                await _send_error(scope, send_with_id, invalid_api_key())
+            else:
+                await self._app(scope, receive, send_with_id)
+        except Exception:
+            log(logging.ERROR, "http.unhandled_error", exc_info=True, path=scope["path"][:200])
+            if status is None:
+                await _send_error(scope, send_with_id, internal_error())
+        finally:
+            duration = time.monotonic() - started
+            self._metrics.inc("http_requests_total", "HTTP requests and WebSocket handshakes by status.",
+                              status=str(status))
+            # Path only: no query string, headers, body or client filename.
+            log(logging.INFO, "http.request", method=scope.get("method", "WS"), path=scope["path"][:200],
+                status=status, duration_ms=round(duration * 1000, 1))
+            request_id.reset(token)
+
+
+async def _send_error(scope: Scope, send: Send, error: APIError) -> None:
+    body = json.dumps(error.body()).encode()
+    headers = [(b"content-type", b"application/json"), (b"content-length", str(len(body)).encode())]
+    headers += [(k.lower().encode(), v.encode()) for k, v in error.headers.items()]
+    if scope["type"] == "http":
+        await send({"type": "http.response.start", "status": error.status, "headers": headers})
+        await send({"type": "http.response.body", "body": body})
+    elif "websocket.http.response" in (scope.get("extensions") or {}):
+        await send({"type": "websocket.http.response.start", "status": error.status, "headers": headers})
+        await send({"type": "websocket.http.response.body", "body": body})
+    else:  # server without the denial-response extension: refuse the handshake (403)
+        await send({"type": "websocket.close", "code": 1008})

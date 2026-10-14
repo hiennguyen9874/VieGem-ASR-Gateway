@@ -13,6 +13,8 @@ dependencies = [
     "numpy",
     "soundfile>=0.12",
     "soxr",
+    "fastapi>=0.143.0",
+    "uvicorn>=0.54.0",
 ]
 
 [dependency-groups]

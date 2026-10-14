@@ -1,0 +1,141 @@
+"""Typed gateway configuration, read once from `QUAN_*` environment variables.
+
+Every limit is finite and validated at startup; an invalid or unknown variable aborts startup (`ConfigError`).
+There is no default API key. Gateway API keys are separate from `HF_TOKEN` (staging secret), and a key equal to
+`HF_TOKEN` is rejected so the two cannot be mixed up.
+"""
+
+import dataclasses
+import math
+import os
+from collections.abc import Mapping
+from dataclasses import dataclass
+from pathlib import Path
+
+SAMPLE_RATE = 16000  # QUAN input rate; queue budgets are counted in 16 kHz samples
+PREFIX = "QUAN_"
+MIN_API_KEY_LENGTH = 16
+
+
+class ConfigError(ValueError):
+    pass
+
+
+@dataclass(frozen=True)
+class Config:
+    api_keys: tuple[str, ...] = dataclasses.field(repr=False)
+    models_dir: Path = Path("models")
+    device: str = "cuda"
+    whisper_alias: bool = False  # opt-in alias `whisper-1` (docs/api-contract.vi.md §3)
+    log_level: str = "INFO"
+
+    # Upload and decode (M2)
+    max_upload_bytes: int = 25 * 1024 * 1024
+    max_audio_seconds: float = 1800.0
+    max_chunk_seconds: float = 30.0
+    decode_timeout_seconds: float = 60.0
+    max_concurrent_decodes: int = 2
+
+    # Scheduler. A lane is one REST request or one realtime session.
+    queue_max_lanes: int = 32
+    queue_max_jobs: int = 64
+    queue_max_jobs_per_lane: int = 2
+    queue_max_buffered_seconds: float = 900.0  # audio held by queued + running jobs
+    queue_timeout_seconds: float = 30.0  # max wait for queue capacity before 429
+    live_priority_ratio: int = 3  # live jobs dispatched per file job when both are waiting
+    request_timeout_seconds: float = 600.0  # total upload/decode/queue/infer budget of one request
+    infer_hang_seconds: float = 120.0  # one inference call longer than this marks the worker hung
+
+    # Realtime sessions (M5)
+    max_sessions: int = 16
+    max_session_seconds: float = 3600.0
+    max_turn_seconds: float = 120.0
+    max_pending_items: int = 4
+    session_idle_timeout_seconds: float = 120.0
+    send_timeout_seconds: float = 10.0
+
+    shutdown_drain_seconds: float = 30.0
+
+    @property
+    def queue_max_buffered_samples(self) -> int:
+        return int(self.queue_max_buffered_seconds * SAMPLE_RATE)
+
+    def __post_init__(self) -> None:
+        if not self.api_keys:
+            raise ConfigError("QUAN_API_KEYS (or QUAN_API_KEYS_FILE) must define at least one key")
+        for key in self.api_keys:
+            if len(key) < MIN_API_KEY_LENGTH or any(c.isspace() for c in key) or not key.isprintable():
+                raise ConfigError(f"API keys must be >= {MIN_API_KEY_LENGTH} printable characters without spaces")
+        if len(set(self.api_keys)) != len(self.api_keys):
+            raise ConfigError("duplicate API key")
+        if self.log_level not in ("DEBUG", "INFO", "WARNING", "ERROR"):
+            raise ConfigError(f"QUAN_LOG_LEVEL must be DEBUG, INFO, WARNING or ERROR, got {self.log_level!r}")
+        if not self.device:
+            raise ConfigError("QUAN_DEVICE must not be empty")
+        for f in dataclasses.fields(self):
+            value = getattr(self, f.name)
+            if f.type in (int, float) and not (math.isfinite(value) and value > 0):
+                raise ConfigError(f"{PREFIX}{f.name.upper()} must be a finite number > 0, got {value!r}")
+        if self.max_chunk_seconds > self.max_audio_seconds:
+            raise ConfigError("QUAN_MAX_CHUNK_SECONDS must be <= QUAN_MAX_AUDIO_SECONDS")
+        # A single job must fit the queue budget, otherwise it could never be admitted.
+        for name in ("max_chunk_seconds", "max_turn_seconds"):
+            if getattr(self, name) > self.queue_max_buffered_seconds:
+                raise ConfigError(f"{PREFIX}{name.upper()} must be <= QUAN_QUEUE_MAX_BUFFERED_SECONDS")
+        if self.queue_max_jobs_per_lane > self.queue_max_jobs:
+            raise ConfigError("QUAN_QUEUE_MAX_JOBS_PER_LANE must be <= QUAN_QUEUE_MAX_JOBS")
+        if self.max_sessions > self.queue_max_lanes:
+            raise ConfigError("QUAN_MAX_SESSIONS must be <= QUAN_QUEUE_MAX_LANES")
+
+    @classmethod
+    def from_env(cls, env: Mapping[str, str] | None = None) -> "Config":
+        env = os.environ if env is None else env
+        fields = {f.name: f for f in dataclasses.fields(cls) if f.name != "api_keys"}
+        known = {PREFIX + name.upper() for name in fields} | {PREFIX + "API_KEYS", PREFIX + "API_KEYS_FILE"}
+        unknown = sorted(k for k in env if k.startswith(PREFIX) and k not in known)
+        if unknown:
+            raise ConfigError(f"unknown configuration variables: {', '.join(unknown)}")
+
+        kwargs: dict[str, object] = {"api_keys": _read_api_keys(env)}
+        for name, f in fields.items():
+            raw = env.get(PREFIX + name.upper())
+            if raw is not None:
+                kwargs[name] = _parse(PREFIX + name.upper(), raw.strip(), f.type)
+        return cls(**kwargs)
+
+
+def _read_api_keys(env: Mapping[str, str]) -> tuple[str, ...]:
+    inline, path = env.get(PREFIX + "API_KEYS"), env.get(PREFIX + "API_KEYS_FILE")
+    if inline is not None and path is not None:
+        raise ConfigError("set only one of QUAN_API_KEYS and QUAN_API_KEYS_FILE")
+    if path is not None:
+        try:
+            text = Path(path).read_text()
+        except OSError as e:
+            raise ConfigError(f"cannot read QUAN_API_KEYS_FILE: {e.strerror}") from None
+        keys = tuple(line.strip() for line in text.splitlines() if line.strip() and not line.startswith("#"))
+    else:
+        keys = tuple(k.strip() for k in (inline or "").split(",") if k.strip())
+    hf_token = env.get("HF_TOKEN")
+    if hf_token and hf_token.strip() in keys:
+        raise ConfigError("an API key equals HF_TOKEN; gateway keys must be separate secrets")
+    return keys
+
+
+def _parse(name: str, raw: str, type_: object) -> object:
+    try:
+        if type_ is bool:
+            if raw.lower() in ("1", "true", "yes", "on"):
+                return True
+            if raw.lower() in ("0", "false", "no", "off"):
+                return False
+            raise ValueError
+        if type_ is int:
+            return int(raw)
+        if type_ is float:
+            return float(raw)
+        if type_ is Path:
+            return Path(raw)
+        return raw.upper() if name == PREFIX + "LOG_LEVEL" else raw
+    except ValueError:
+        raise ConfigError(f"{name}: invalid value {raw!r}") from None

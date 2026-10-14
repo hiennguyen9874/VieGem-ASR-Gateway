@@ -9,15 +9,23 @@
 
 ```text
 app/quan_loader.py         # load QUAN from staged local dirs only (no Hub resolution); reuses reference classes
+app/config.py              # typed QUAN_* env config, validated at startup (no default API key)
+app/engine.py              # QuanEngine adapter + EngineWorker: the single thread that runs the model
+app/scheduler.py           # bounded fair queue (lanes = requests/sessions, jobs = chunks) feeding the worker
+app/main.py                # FastAPI app factory: lifespan, /health, /ready, /metrics, auth, request ids
+app/errors.py, schemas.py  # OpenAI error envelope + status/code mapping
+app/observability.py       # JSON logs + Prometheus-style metrics (metadata only)
 assets/manifest.json       # single source of model pins: repo id, commit, size + SHA256 per file
 scripts/stage_models.py    # download pinned assets into ./models (or $QUAN_MODELS_DIR), verify SHA256
 scripts/fetch_fixtures.py  # build fixtures from FLEURS vi_vn (CC BY 4.0) at a pinned revision, verify SHA256
 scripts/smoke_inference.py # inference baseline: full/streaming, timings, RAM/VRAM, short-clip probe -> JSON
 docs/baseline/*.json       # saved smoke reports (online / offline)
 tests/
-  unit/                    # CPU: manifests and pins
+  unit/                    # CPU: manifests and pins, config, app over real Uvicorn with a fake engine
+  scheduler/               # CPU: scheduler/worker gate with a fake engine (serialization, bounds, fairness, cancel)
+  fake_engine.py           # engine stand-in shared by CPU tests
   contract/                # CPU: examples/ parsed by pinned OpenAI Python SDK; js/ for the JS SDK
-  gpu/                     # GPU + network: local loader == reference loader (exact logits)
+  gpu/                     # GPU: local loader == reference loader (exact logits, needs network); real engine
   fixtures/                # small committed fixtures + manifest.json (hashes, references, license)
 models/                    # staged assets (gitignored)
 fixtures-large/            # large fixtures, e.g. vi_long.wav (gitignored)
@@ -33,7 +41,10 @@ uv run scripts/fetch_fixtures.py                 # build fixtures (--verify [--s
 CUDA_VISIBLE_DEVICES=<free gpu> uv run scripts/smoke_inference.py --out docs/baseline/online.json
 CUDA_VISIBLE_DEVICES=<free gpu> HF_HOME=$(mktemp -d) uv run --offline scripts/smoke_inference.py \
     --no-network --out docs/baseline/offline.json
-uv run pytest                                    # unit + contract; GPU parity skips without CUDA/assets/network
+uv run pytest                                    # unit + scheduler + contract; GPU tests skip without CUDA/assets
+CUDA_VISIBLE_DEVICES=<free gpu> uv run pytest tests/gpu
+QUAN_API_KEYS=<key> CUDA_VISIBLE_DEVICES=<free gpu> uv run uvicorn --factory app.main:create_app \
+    --workers 1 --no-access-log --timeout-graceful-shutdown 30   # one process per GPU; /ready after warm-up
 (cd tests/contract/js && npm ci && npm test)     # JS SDK contract (tsc --strict + node --test)
 ```
 
@@ -44,7 +55,8 @@ uv run pytest                                    # unit + contract; GPU parity s
   commit in `pyproject.toml` equal to the manifest (enforced by `tests/unit/test_manifests.py`).
 - Load the model through `app/quan_loader.load_quan`, not `QuanTranscribe.from_pretrained` (that resolves the base
   model at Hub `main`). Do not patch code under `references/`.
-- All inference on one model instance must be serialized (`QuanCTC._acts` is mutable hook state).
+- All inference on one model instance must be serialized (`QuanCTC._acts` is mutable hook state): only
+  `app/engine.py` calls QUAN, and only via `Scheduler` lanes; endpoints never touch the model or the worker.
 - Never forward waveforms shorter than 161 samples at 16 kHz (the frontend crashes); see docs/baseline.vi.md §7.
 - Contract changes: update `tests/contract/examples/` plus both SDK tests, then docs/api-contract.vi.md. Omit
   optional fields rather than sending `null` (the JS types reject `null` for several of them).

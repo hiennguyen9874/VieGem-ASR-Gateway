@@ -152,11 +152,18 @@ Envelope (ví dụ `examples/error.json`):
 |---|---|---|
 | 400 | `invalid_request_error` | `missing_required_parameter`, `unsupported_parameter`, `invalid_value`, `unsupported_language`, `unsupported_response_format`, `invalid_audio` (không decode được), `audio_too_long` |
 | 401 | `authentication_error` | `invalid_api_key` (thiếu hoặc sai) |
-| 404 | `invalid_request_error` | `model_not_found`, `not_found` |
+| 404 | `invalid_request_error` | `model_not_found`, `not_found` (route không tồn tại; chỉ sau khi auth hợp lệ, nếu không là 401) |
+| 405 | `invalid_request_error` | `method_not_allowed` |
 | 413 | `invalid_request_error` | `request_too_large` (body/file vượt giới hạn, kiểm tra trước multipart parse) |
 | 429 | `rate_limit_error` | `server_busy` (queue/concurrency đầy); kèm `Retry-After` khi có ước lượng |
-| 500 | `server_error` | `inference_failed` |
-| 503 | `server_error` | `model_not_ready` (đang load/recover) |
+| 500 | `server_error` | `inference_failed`, `internal_error` (lỗi không lường trước, không lộ chi tiết) |
+| 503 | `server_error` | `model_not_ready` (đang load/recover, `Retry-After: 5`), `shutting_down` (đang drain), `request_timeout` (job quá hạn trước khi được chạy) |
+
+Mọi response (kể cả lỗi) có header `x-request-id: req_…`; SDK đưa giá trị này vào `request_id` của exception.
+
+Endpoint vận hành (không thuộc profile OpenAI): `GET /health` (liveness, không cần auth; 503 `unhealthy` khi
+cần restart process), `GET /ready` (readiness, không cần auth; 200 `{"status": "ready"}` hoặc 503 như trên),
+`GET /metrics` (Prometheus text, cần API key).
 
 Không bao giờ trả FastAPI 422 `{"detail": …}`. Message không chứa transcript, audio, token hay đường dẫn nội bộ.
 SDK ánh xạ status → class (`BadRequestError`, `AuthenticationError`, `NotFoundError`, …) và đọc `code`/`param`/`type`
