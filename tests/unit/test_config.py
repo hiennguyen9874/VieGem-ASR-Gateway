@@ -58,6 +58,7 @@ def test_api_keys_file(tmp_path):
     {"QUAN_API_KEYS": KEY, "QUAN_QUEUE_MAX_JOBS_PER_LANE": "10", "QUAN_QUEUE_MAX_JOBS": "5"},
     {"QUAN_API_KEYS": KEY, "QUAN_MAX_SESSIONS": "40"},
     {"QUAN_API_KEYS": KEY, "QUAN_MAX_CHUNK_SECONDS": "0.5"},  # splitter needs room above the short-clip floor
+    {"QUAN_API_KEYS": KEY, "QUAN_MAX_DECODED_SECONDS": "100"},  # a max-length file could never be held
     {"QUAN_API_KEYS": KEY, "QUAN_MAX_UPLOAD_BYTES": "1000", "QUAN_MAX_SPOOL_BYTES": "999"},
 ])
 def test_invalid_config_fails_startup(env):

@@ -1,10 +1,12 @@
 """Engine stand-in for CPU tests: records concurrency, can block, fail or hang on demand.
 
 A waveform's identity is its fill value: `wav(7)` transcribes to "7", so tests can check results are not mixed up.
+Tests on real (decoded) audio pass `text_fn` to derive the text from the chunk instead.
 """
 
 import threading
 import time
+from collections.abc import Callable
 
 import numpy as np
 
@@ -21,8 +23,9 @@ def config(**overrides) -> Config:
 
 
 class FakeEngine:
-    def __init__(self, delay: float = 0.0):
+    def __init__(self, delay: float = 0.0, text_fn: Callable[[np.ndarray], str] | None = None):
         self.delay = delay
+        self.text_fn = text_fn or (lambda w: str(int(w[0])))
         self.lock = threading.Lock()
         self.active = 0
         self.max_active = 0
@@ -62,7 +65,7 @@ class FakeEngine:
             if self.fail_calls:
                 self.fail_calls -= 1
                 raise RuntimeError("CUDA error: simulated")
-            return str(int(wav[0]))
+            return self.text_fn(wav)
         finally:
             with self.lock:
                 self.active -= 1

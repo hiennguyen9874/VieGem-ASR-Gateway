@@ -51,12 +51,19 @@ Auth: `Authorization: Bearer <key>`. Body `multipart/form-data`.
 | `file` | Bắt buộc, đúng một part. Tên file client bị bỏ qua (không dùng làm path, không log). Định dạng nhận diện theo nội dung, không theo đuôi: Container allowlist: WAV, FLAC, MP3/MPGA, MP4/M4A, OGG, WEBM/Matroska. Decoder allowlist: PCM (`s16le`, `s24le`, `s32le`, `u8`, `f32le`, `f64le`, A-law, µ-law), FLAC, ALAC, MP1/MP2/MP3, AAC, Vorbis, Opus. Chấp nhận mọi tổ hợp container/decoder trong hai allowlist mà FFmpeg đọc được (kể cả OGG/FLAC và Matroska/AAC); không giới hạn theo cặp. Container/codec ngoài allowlist (ADTS `.aac`, MPEG-PS, playlist, ADPCM, …) → 400 `invalid_audio`. Mọi sample rate/số kênh được đưa về mono 16 kHz (downmix của FFmpeg) |
 | `model` | Bắt buộc; thiếu → 400 `missing_required_parameter`; không phục vụ → 404 `model_not_found` (`param: "model"`) |
 | `language` | Không gửi hoặc `vi`; khác → 400 `unsupported_language`. Không gửi **không** có nghĩa là auto-detect |
-| `temperature` | Không gửi hoặc `0` (decode tất định, greedy); khác → 400 `unsupported_parameter` |
+| `temperature` | Không gửi hoặc số bằng 0 (`0`, `0.0`, `-0`; decode tất định, greedy). Không phải số hữu hạn (rỗng, `abc`, `nan`, `inf`) → 400 `invalid_value`; số khác 0 → 400 `unsupported_parameter` |
 | `prompt` | Không gửi hoặc rỗng; khác → 400 `unsupported_parameter` |
 | `response_format` | `json` (mặc định), `text`; R2 thêm `verbose_json`/`srt`/`vtt`; khác → 400 `unsupported_response_format` |
-| `stream` | `true`/`false`. `true` với `response_format` không gửi, `json` hoặc `text` → SSE (§5); với format khác → 400 `unsupported_parameter` (`param: "stream"`) |
+| `stream` | Đúng chuỗi `true` hoặc `false` (cả hai SDK gửi như vậy); giá trị khác (`True`, `1`, rỗng) → 400 `invalid_value`. `true` với `response_format` không gửi, `json` hoặc `text` → SSE (§5); R2: với format khác → 400 `unsupported_parameter` (`param: "stream"`; ở R1 format khác đã bị từ chối trước) |
 | `include[]`, `timestamp_granularities[]` | Field lặp, tên **có** `[]` (đã xác minh cả hai SDK gửi như vậy). R1: bất kỳ giá trị nào → 400 `unsupported_parameter` |
-| Field khác (kể cả `chunking_strategy`, `known_speaker_names[]`) | 400 `unsupported_parameter` (`param` = tên field). Không âm thầm bỏ qua |
+| Field khác (kể cả `chunking_strategy`, `known_speaker_names[]`, `include` không có `[]`) | 400 `unsupported_parameter` (`param` = tên field, cắt 64 ký tự). Không âm thầm bỏ qua |
+
+Mọi field trừ `file`, `include[]`, `timestamp_granularities[]` chỉ được gửi một lần; lặp → 400 `invalid_value`
+(`param` = tên). Thứ tự kiểm tra cố định, trả lỗi đầu tiên (`app/transcription.py:parse_params`, test
+`tests/unit/test_transcription_params.py`): (1) field lạ theo thứ tự gửi, (2) field lặp, (3) thiếu/rỗng `model`,
+(4) `include[]`, (5) `timestamp_granularities[]`, (6) `language`, (7) `temperature`, (8) `prompt`,
+(9) `response_format`, (10) `stream`, (11) model không phục vụ (404). Multipart/`file` được kiểm tra trước tất cả
+(§4 giới hạn), decode audio sau tất cả.
 
 Kết quả:
 
@@ -76,12 +83,17 @@ Kết quả:
   chunked; ≤ 32 part, mỗi field không phải file ≤ 8 KiB (→ 413), field phải là UTF-8; audio sau decode ≤
   `QUAN_MAX_AUDIO_SECONDS` (1800 s) → 400 `audio_too_long`; decode quá `QUAN_DECODE_TIMEOUT_SECONDS` → 400
   `invalid_audio`; tổng upload/decode/queue/infer quá `QUAN_REQUEST_TIMEOUT_SECONDS` → 503 `request_timeout`; hết
-  slot decode hoặc spool disk → 429 `server_busy`. Stream bị cụt được decode phần đọc được nếu FFmpeg đọc được.
+  slot decode, spool disk, lane (`QUAN_QUEUE_MAX_LANES`, kiểm tra trước khi decode) hoặc budget audio đã decode giữ
+  trong RAM (`QUAN_MAX_DECODED_SECONDS`, mặc định 3600 s cho mọi request đang chạy) → 429 `server_busy`. Stream bị
+  cụt được decode phần đọc được nếu FFmpeg đọc được.
 
 ## 5. SSE (`stream=true`)
 
 - Validate request **và decode audio xong trước khi gửi headers**; lỗi giai đoạn này trả HTTP lỗi như §7.
-- Headers: `200`, `Content-Type: text/event-stream`, `Cache-Control: no-cache`, `X-Accel-Buffering: no`.
+- Headers: `200`, `Content-Type: text/event-stream; charset=utf-8`, `Cache-Control: no-cache`,
+  `X-Accel-Buffering: no`, không có `Content-Length` (chunked). JSON trong event là compact UTF-8 (không escape
+  `\uXXXX`). Không có heartbeat: reverse proxy phải tắt buffering và có read timeout ≥
+  `QUAN_REQUEST_TIMEOUT_SECONDS` (README).
 - Mỗi event là một dòng `data: <json>` + dòng trống; **không** có trường `event:` và **không** gửi `[DONE]`
   (cả hai SDK coi `[DONE]` là tùy chọn; stream kết thúc bằng đóng kết nối sau `done`).
 - `{"type": "transcript.text.delta", "delta": "..."}`: một event cho mỗi chunk đã decode xong với text khác rỗng,
@@ -92,7 +104,11 @@ Kết quả:
 - Lỗi sau headers: một event `data: {"error": {"message", "type", "param", "code"}}` (cùng envelope với HTTP) rồi đóng
   stream, **không** có `done`. Cả hai SDK ném `APIError` với `code` tương ứng (đã test). Ví dụ
   `examples/transcription_stream.sse`, `examples/transcription_stream_error.sse`.
-- Client ngắt kết nối: dừng enqueue chunk tiếp; không phát gì thêm.
+- Client ngắt kết nối: dừng enqueue chunk tiếp, hủy chunk đang chờ, bỏ kết quả chunk đang chạy; không phát gì
+  thêm. Cũng áp dụng cho JSON/text và khi đang decode (FFmpeg bị kill). Client không đọc: một lần gửi event quá
+  `QUAN_SEND_TIMEOUT_SECONDS` (10 s) được coi như ngắt kết nối (đóng kết nối, không gửi `error`).
+- Tối đa `QUAN_QUEUE_MAX_JOBS_PER_LANE` (2) chunk của một request nằm trong queue/đang chạy cùng lúc: GPU chạy
+  trước client tối đa một cửa sổ đó, server không buffer thêm event.
 
 ## 6. Realtime WebSocket `/v1/realtime` (R3a)
 
@@ -164,7 +180,7 @@ Envelope (ví dụ `examples/error.json`):
 | 404 | `invalid_request_error` | `model_not_found`, `not_found` (route không tồn tại; chỉ sau khi auth hợp lệ, nếu không là 401) |
 | 405 | `invalid_request_error` | `method_not_allowed` |
 | 413 | `invalid_request_error` | `request_too_large` (body vượt giới hạn, kiểm tra trước multipart parse; hoặc một form field vượt 8 KiB) |
-| 429 | `rate_limit_error` | `server_busy` (queue/concurrency/decode slot/spool disk đầy); kèm `Retry-After` khi có ước lượng |
+| 429 | `rate_limit_error` | `server_busy` (queue/concurrency/decode slot/spool disk/budget audio đã decode đầy); kèm `Retry-After` khi có ước lượng |
 | 500 | `server_error` | `inference_failed`, `internal_error` (lỗi không lường trước, không lộ chi tiết) |
 | 503 | `server_error` | `model_not_ready` (đang load/recover, `Retry-After: 5`), `shutting_down` (đang drain), `request_timeout` (hết budget tổng của request ở upload, decode, chờ queue hoặc đang chạy; call đang chạy vẫn giữ worker/budget tới khi kết thúc) |
 
@@ -185,6 +201,10 @@ từ envelope. `examples/service_errors.json` được kiểm thử bằng cả 
 uv run pytest tests/contract tests/unit
 (cd tests/contract/js && npm ci && npm test)
 ```
+
+`tests/contract/test_server_sdk.py` chạy gateway thật (Uvicorn + FFmpeg, fake engine): payload có cùng key/type với
+`examples/`, Python SDK parse được, và chạy `js/server.test.ts` (JS SDK) với `QUAN_TEST_BASE_URL`,
+`QUAN_TEST_API_KEY`, `QUAN_TEST_AUDIO_DIR`; `npm test` đơn lẻ bỏ qua các test đó.
 
 Khi đổi version SDK: cập nhật pin trong `pyproject.toml`/`tests/contract/js/package.json`, chạy lại cả hai, ghi lại
 thay đổi schema ở tài liệu này. Khi gateway được triển khai (M3/M5), test tích hợp phải gọi server thật và so sánh

@@ -1,0 +1,136 @@
+{
+  "base_url": "http://127.0.0.1:8765",
+  "commit": "289b6f8738675d9cdac1ed5139645d1a6d89a66b-dirty",
+  "started_unix": 1791973509,
+  "ready_wait_s": 13.218,
+  "health": {
+    "status": "ok"
+  },
+  "models": [
+    "quan-transcribe-1.0"
+  ],
+  "results": {
+    "vi_a.wav": {
+      "text": "các sản phẩm thủ công có thể được coi là độ cổ mặc dù tuổi đời của chúng ch trẻ hơn rất nhiều các sản phẩm tương tự được sản xuất hàng loạt",
+      "usage": {
+        "type": "duration",
+        "seconds": 8.88
+      },
+      "text_body": "các sản phẩm thủ công có thể được coi là độ cổ mặc dù tuổi đời của chúng ch trẻ hơn rất nhiều các sản phẩm tương tự được sản xuất hàng loạt",
+      "text_content_type": "text/plain; charset=utf-8",
+      "sse_content_type": "text/event-stream; charset=utf-8",
+      "deltas": 1,
+      "sse_joined": "các sản phẩm thủ công có thể được coi là độ cổ mặc dù tuổi đời của chúng ch trẻ hơn rất nhiều các sản phẩm tương tự được sản xuất hàng loạt",
+      "sse_done": "các sản phẩm thủ công có thể được coi là độ cổ mặc dù tuổi đời của chúng ch trẻ hơn rất nhiều các sản phẩm tương tự được sản xuất hàng loạt",
+      "sse_errors": [],
+      "timings_s": {
+        "json": 0.147,
+        "text": 0.128,
+        "sse_total": 0.128,
+        "sse_first_event": 0.128
+      },
+      "audio_s": 8.88,
+      "baseline": "các sản phẩm thủ công có thể được coi là độ cổ mặc dù tuổi đời của chúng ch trẻ hơn rất nhiều các sản phẩm tương tự được sản xuất hàng loạt",
+      "matches_baseline": true
+    },
+    "vi_b.wav": {
+      "text": "nghiên cứu trí tuệ nhân tạo bao gồm tạo ra những cỗ máy tự động hóa các tác dụ đòi hỏi hành vi thông minh",
+      "usage": {
+        "type": "duration",
+        "seconds": 8.46
+      },
+      "text_body": "nghiên cứu trí tuệ nhân tạo bao gồm tạo ra những cỗ máy tự động hóa các tác dụ đòi hỏi hành vi thông minh",
+      "text_content_type": "text/plain; charset=utf-8",
+      "sse_content_type": "text/event-stream; charset=utf-8",
+      "deltas": 1,
+      "sse_joined": "nghiên cứu trí tuệ nhân tạo bao gồm tạo ra những cỗ máy tự động hóa các tác dụ đòi hỏi hành vi thông minh",
+      "sse_done": "nghiên cứu trí tuệ nhân tạo bao gồm tạo ra những cỗ máy tự động hóa các tác dụ đòi hỏi hành vi thông minh",
+      "sse_errors": [],
+      "timings_s": {
+        "json": 0.131,
+        "text": 0.124,
+        "sse_total": 0.126,
+        "sse_first_event": 0.126
+      },
+      "audio_s": 8.46,
+      "baseline": "nghiên cứu trí tuệ nhân tạo bao gồm tạo ra những cỗ máy tự động hóa các tác dụ đòi hỏi hành vi thông minh",
+      "matches_baseline": true
+    },
+    "silence_2s.wav": {
+      "text": "",
+      "usage": {
+        "type": "duration",
+        "seconds": 2.0
+      },
+      "text_body": "",
+      "text_content_type": "text/plain; charset=utf-8",
+      "sse_content_type": "text/event-stream; charset=utf-8",
+      "deltas": 0,
+      "sse_joined": "",
+      "sse_done": "",
+      "sse_errors": [],
+      "timings_s": {
+        "json": 0.15,
+        "text": 0.125,
+        "sse_total": 0.125,
+        "sse_first_event": 0.125
+      },
+      "audio_s": 2.0,
+      "baseline": "",
+      "matches_baseline": true
+    },
+    "short_200ms.wav": {
+      "text": "",
+      "usage": {
+        "type": "duration",
+        "seconds": 0.2
+      },
+      "text_body": "",
+      "text_content_type": "text/plain; charset=utf-8",
+      "sse_content_type": "text/event-stream; charset=utf-8",
+      "deltas": 0,
+      "sse_joined": "",
+      "sse_done": "",
+      "sse_errors": [],
+      "timings_s": {
+        "json": 0.132,
+        "text": 0.12,
+        "sse_total": 0.119,
+        "sse_first_event": 0.119
+      },
+      "audio_s": 0.2,
+      "baseline": "",
+      "matches_baseline": true
+    },
+    "vi_long.wav": {
+      "text": "một số loài động vật như voi và hô cao cổ thường hay đã gần xe và chỉ với các dụng cụ bình thường chúng ta cũng sẽ quan sát một cách dễ dàng điện thoại vệ tinh nói chung không phải là sự thay thế cho điện thoại di động vì bạn phải ở ngoài trời và có tầm nhìn thông thoáng thẳng đến vệ tinh thì mới sử dụng được sau đó la singh giữa vai giờ chính khi hát các bài hát he bác sĩ nghĩ rằng một số bệnh nhân có thể đã bị lâyẹp ở bệnh viện và ít nhất hai người là nhân viên y tế trong bệnh viện tôi không biết bạn có nhận ra hay không nhưng hầu hết hàng hóa từúng mỹ nhập khẩu vào nước này đều được miễn thuế argentina nổi tiếng có một trong những đội bóng polo và cầu thủ giỏi nhất thế giới nếu đến thăm vùng bắc cực hoặc nam cực vào mùa đông bạn sẽ được trải nghiệm đến vùng cực nghĩa là mặt trời không nhú lên khỏi chân trời lúc đầu trang phục chịu ảnh hưởng nặng nề của nền văn hóa diesel ở phía đông điều lệ cần có sự nhất trí từ tất cả các bang trước khi sửa đổi và các bang xem nhẹ chính quyền trung ương đến mức đại diễn thường xuyên vắng mặt bản báo cáo mở đầu bằng lời biện hộ cho cuộc trên luận mở và tạo lập sự đồng thuận của hoa kỳ về chính sách đối với trung đồng",
+      "usage": {
+        "type": "duration",
+        "seconds": 106.62
+      },
+      "text_body": "một số loài động vật như voi và hô cao cổ thường hay đã gần xe và chỉ với các dụng cụ bình thường chúng ta cũng sẽ quan sát một cách dễ dàng điện thoại vệ tinh nói chung không phải là sự thay thế cho điện thoại di động vì bạn phải ở ngoài trời và có tầm nhìn thông thoáng thẳng đến vệ tinh thì mới sử dụng được sau đó la singh giữa vai giờ chính khi hát các bài hát he bác sĩ nghĩ rằng một số bệnh nhân có thể đã bị lâyẹp ở bệnh viện và ít nhất hai người là nhân viên y tế trong bệnh viện tôi không biết bạn có nhận ra hay không nhưng hầu hết hàng hóa từúng mỹ nhập khẩu vào nước này đều được miễn thuế argentina nổi tiếng có một trong những đội bóng polo và cầu thủ giỏi nhất thế giới nếu đến thăm vùng bắc cực hoặc nam cực vào mùa đông bạn sẽ được trải nghiệm đến vùng cực nghĩa là mặt trời không nhú lên khỏi chân trời lúc đầu trang phục chịu ảnh hưởng nặng nề của nền văn hóa diesel ở phía đông điều lệ cần có sự nhất trí từ tất cả các bang trước khi sửa đổi và các bang xem nhẹ chính quyền trung ương đến mức đại diễn thường xuyên vắng mặt bản báo cáo mở đầu bằng lời biện hộ cho cuộc trên luận mở và tạo lập sự đồng thuận của hoa kỳ về chính sách đối với trung đồng",
+      "text_content_type": "text/plain; charset=utf-8",
+      "sse_content_type": "text/event-stream; charset=utf-8",
+      "deltas": 4,
+      "sse_joined": "một số loài động vật như voi và hô cao cổ thường hay đã gần xe và chỉ với các dụng cụ bình thường chúng ta cũng sẽ quan sát một cách dễ dàng điện thoại vệ tinh nói chung không phải là sự thay thế cho điện thoại di động vì bạn phải ở ngoài trời và có tầm nhìn thông thoáng thẳng đến vệ tinh thì mới sử dụng được sau đó la singh giữa vai giờ chính khi hát các bài hát he bác sĩ nghĩ rằng một số bệnh nhân có thể đã bị lâyẹp ở bệnh viện và ít nhất hai người là nhân viên y tế trong bệnh viện tôi không biết bạn có nhận ra hay không nhưng hầu hết hàng hóa từúng mỹ nhập khẩu vào nước này đều được miễn thuế argentina nổi tiếng có một trong những đội bóng polo và cầu thủ giỏi nhất thế giới nếu đến thăm vùng bắc cực hoặc nam cực vào mùa đông bạn sẽ được trải nghiệm đến vùng cực nghĩa là mặt trời không nhú lên khỏi chân trời lúc đầu trang phục chịu ảnh hưởng nặng nề của nền văn hóa diesel ở phía đông điều lệ cần có sự nhất trí từ tất cả các bang trước khi sửa đổi và các bang xem nhẹ chính quyền trung ương đến mức đại diễn thường xuyên vắng mặt bản báo cáo mở đầu bằng lời biện hộ cho cuộc trên luận mở và tạo lập sự đồng thuận của hoa kỳ về chính sách đối với trung đồng",
+      "sse_done": "một số loài động vật như voi và hô cao cổ thường hay đã gần xe và chỉ với các dụng cụ bình thường chúng ta cũng sẽ quan sát một cách dễ dàng điện thoại vệ tinh nói chung không phải là sự thay thế cho điện thoại di động vì bạn phải ở ngoài trời và có tầm nhìn thông thoáng thẳng đến vệ tinh thì mới sử dụng được sau đó la singh giữa vai giờ chính khi hát các bài hát he bác sĩ nghĩ rằng một số bệnh nhân có thể đã bị lâyẹp ở bệnh viện và ít nhất hai người là nhân viên y tế trong bệnh viện tôi không biết bạn có nhận ra hay không nhưng hầu hết hàng hóa từúng mỹ nhập khẩu vào nước này đều được miễn thuế argentina nổi tiếng có một trong những đội bóng polo và cầu thủ giỏi nhất thế giới nếu đến thăm vùng bắc cực hoặc nam cực vào mùa đông bạn sẽ được trải nghiệm đến vùng cực nghĩa là mặt trời không nhú lên khỏi chân trời lúc đầu trang phục chịu ảnh hưởng nặng nề của nền văn hóa diesel ở phía đông điều lệ cần có sự nhất trí từ tất cả các bang trước khi sửa đổi và các bang xem nhẹ chính quyền trung ương đến mức đại diễn thường xuyên vắng mặt bản báo cáo mở đầu bằng lời biện hộ cho cuộc trên luận mở và tạo lập sự đồng thuận của hoa kỳ về chính sách đối với trung đồng",
+      "sse_errors": [],
+      "timings_s": {
+        "json": 0.344,
+        "text": 0.317,
+        "sse_total": 0.316,
+        "sse_first_event": 0.16
+      },
+      "audio_s": 106.62,
+      "wer": 0.0699
+    }
+  },
+  "metrics_excerpt": [
+    "quan_decodes_total{outcome=\"ok\"} 15.0",
+    "quan_jobs_total{kind=\"file\",outcome=\"ok\"} 24.0",
+    "quan_transcriptions_total{outcome=\"ok\",response_format=\"json\",stream=\"false\"} 5.0",
+    "quan_transcriptions_total{outcome=\"ok\",response_format=\"json\",stream=\"true\"} 5.0",
+    "quan_transcriptions_total{outcome=\"ok\",response_format=\"text\",stream=\"false\"} 5.0"
+  ],
+  "failures": []
+}

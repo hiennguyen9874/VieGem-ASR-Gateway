@@ -39,4 +39,7 @@ explicit = true
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
-markers = ["gpu: needs a CUDA GPU and staged model assets (scripts/stage_models.py)"]
+markers = [
+    "gpu: needs a CUDA GPU and staged model assets (scripts/stage_models.py)",
+    "container: needs docker (runtime checks: NVIDIA Container Toolkit, QUAN_GPU, staged models)",
+]

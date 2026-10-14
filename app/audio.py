@@ -16,6 +16,9 @@ Decode (`AudioIngress.decode`):
   deadline. The process is killed and reaped on every exit path.
 
 Upload and decode both stop at the request `deadline` (time.monotonic), the budget shared with queue and inference.
+
+Decoded audio (`AudioIngress.hold`): the waveforms that requests keep in RAM until their transcript is done share a
+budget (`max_decoded_seconds`, 429).
 """
 
 import asyncio
@@ -25,8 +28,8 @@ import os
 import shutil
 import tempfile
 import time
-from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager, suppress
+from collections.abc import AsyncIterator, Iterator
+from contextlib import asynccontextmanager, contextmanager, suppress
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -80,9 +83,13 @@ class AudioIngress:
         self._spool_dir: Path | None = None
         self._spooled = 0
         self._decoding = 0
+        self._max_held = int(config.max_decoded_seconds * SAMPLE_RATE)
+        self._held = 0
         self._metrics = metrics
         metrics.gauge_fn("spool_bytes", "Upload bytes held in temp files.", lambda: self._spooled)
         metrics.gauge_fn("active_decodes", "Running FFmpeg decode processes.", lambda: self._decoding)
+        metrics.gauge_fn("decoded_audio_seconds", "Decoded audio held in RAM by requests in flight.",
+                         lambda: self._held / SAMPLE_RATE)
 
     @property
     def spool_dir(self) -> Path | None:
@@ -174,6 +181,18 @@ class AudioIngress:
         return fd, Path(name)
 
     # -- decode ----------------------------------------------------------------------------------------------------
+
+    @contextmanager
+    def hold(self, wav: np.ndarray) -> Iterator[None]:
+        """Account a decoded waveform against the shared RAM budget while the caller keeps it (429 if full)."""
+        n = len(wav)
+        if self._held + n > self._max_held:
+            raise server_busy(retry_after=1)
+        self._held += n
+        try:
+            yield
+        finally:
+            self._held -= n
 
     async def decode(self, path: Path, deadline: float) -> np.ndarray:
         """Decode a spooled upload to 16 kHz mono float32. Raises `APIError` (400 invalid_audio/audio_too_long,

@@ -39,6 +39,7 @@ class Config:
     max_chunk_seconds: float = 30.0
     decode_timeout_seconds: float = 60.0
     max_concurrent_decodes: int = 2
+    max_decoded_seconds: float = 3600.0  # decoded audio held in RAM by all requests in flight (429 above)
 
     # Scheduler. A lane is one REST request or one realtime session.
     queue_max_lanes: int = 32
@@ -56,7 +57,7 @@ class Config:
     max_turn_seconds: float = 120.0
     max_pending_items: int = 4
     session_idle_timeout_seconds: float = 120.0
-    send_timeout_seconds: float = 10.0
+    send_timeout_seconds: float = 10.0  # one SSE/WebSocket send; a slower client counts as disconnected
 
     shutdown_drain_seconds: float = 30.0
 
@@ -93,6 +94,8 @@ class Config:
         if self.max_chunk_seconds < MIN_CHUNK_SECONDS:
             # The splitter needs room to cut at a quiet point and keep every chunk above the short-clip floor.
             raise ConfigError(f"QUAN_MAX_CHUNK_SECONDS must be >= {MIN_CHUNK_SECONDS}")
+        if self.max_decoded_seconds < self.max_audio_seconds:
+            raise ConfigError("QUAN_MAX_DECODED_SECONDS must be >= QUAN_MAX_AUDIO_SECONDS")
         if self.max_spool_bytes < self.max_upload_bytes:
             raise ConfigError("QUAN_MAX_SPOOL_BYTES must be >= QUAN_MAX_UPLOAD_BYTES")
         # A single job must fit the queue budget, otherwise it could never be admitted.

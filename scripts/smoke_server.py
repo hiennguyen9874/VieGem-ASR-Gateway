@@ -1,0 +1,191 @@
+"""Smoke test of a running gateway (local process or container): readiness, models, json/text/SSE on the fixtures,
+transcripts compared with the offline inference baseline, timings -> JSON report.
+
+    OPENAI_API_KEY=<gateway key> uv run scripts/smoke_server.py --base-url http://127.0.0.1:8000 \
+        --out docs/baseline/server.json
+
+Standard library only, so it runs from the host against a container port as well. Checks (exit 1 if one fails):
+- every fixture: json text == text body == "".join(SSE deltas) == SSE done text; usage.seconds == samples / 16 kHz;
+- fixtures of one chunk (<= QUAN_MAX_CHUNK_SECONDS, 16 kHz WAV decodes bit-exactly): text == docs/baseline/offline.json
+  (same greedy decoder, same model); silence and the 200 ms clip -> "";
+- fixtures-large/vi_long.wav, if present: WER against the FLEURS reference <= 0.10 (the server's quiet-point chunking
+  differs from the reference splitter used by the baseline, so text parity is not expected).
+"""
+
+import argparse
+import json
+import os
+import subprocess
+import sys
+import time
+import urllib.error
+import urllib.request
+import uuid
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+FIXTURES = ROOT / "tests/fixtures"
+LONG = ROOT / "fixtures-large/vi_long.wav"
+MODEL = "quan-transcribe-1.0"
+LONG_MAX_WER = 0.10
+SMALL = ("vi_a.wav", "vi_b.wav", "silence_2s.wav", "short_200ms.wav")
+
+
+def wer(ref: str, hyp: str) -> float:
+    r, h = ref.split(), hyp.split()
+    d = list(range(len(h) + 1))
+    for i in range(1, len(r) + 1):
+        prev, d[0] = d[0], i
+        for j in range(1, len(h) + 1):
+            prev, d[j] = d[j], min(d[j] + 1, d[j - 1] + 1, prev + (r[i - 1] != h[j - 1]))
+    return d[len(h)] / max(len(r), 1)
+
+
+class Gateway:
+    def __init__(self, base_url: str, api_key: str, timeout: float):
+        self.base, self.key, self.timeout = base_url.rstrip("/"), api_key, timeout
+
+    def request(self, method: str, path: str, body: bytes | None = None, headers: dict | None = None,
+                auth: bool = True):
+        h = dict(headers or {})
+        if auth:
+            h["Authorization"] = f"Bearer {self.key}"
+        req = urllib.request.Request(self.base + path, data=body, method=method, headers=h)
+        return urllib.request.urlopen(req, timeout=self.timeout)
+
+    def get_json(self, path: str, auth: bool = True):
+        with self.request("GET", path, auth=auth) as r:
+            return json.load(r)
+
+    def transcribe(self, audio: bytes, **fields: str):
+        boundary = uuid.uuid4().hex
+        body = b""
+        for k, v in {"model": MODEL, **fields}.items():
+            body += f'--{boundary}\r\nContent-Disposition: form-data; name="{k}"\r\n\r\n{v}\r\n'.encode()
+        body += (f'--{boundary}\r\nContent-Disposition: form-data; name="file"; filename="audio.wav"\r\n'
+                 f"Content-Type: audio/wav\r\n\r\n").encode() + audio + f"\r\n--{boundary}--\r\n".encode()
+        return self.request("POST", "/v1/audio/transcriptions", body,
+                            {"Content-Type": f"multipart/form-data; boundary={boundary}"})
+
+
+def wait_ready(gw: Gateway, timeout: float) -> float:
+    started = time.monotonic()
+    while True:
+        try:
+            if gw.get_json("/ready", auth=False) == {"status": "ready"}:
+                return time.monotonic() - started
+        except (urllib.error.URLError, ConnectionError, TimeoutError):
+            pass
+        if time.monotonic() - started > timeout:
+            raise SystemExit(f"gateway not ready after {timeout:g} s")
+        time.sleep(1)
+
+
+def run_fixture(gw: Gateway, audio: bytes) -> dict:
+    t0 = time.monotonic()
+    with gw.transcribe(audio) as r:
+        body = json.load(r)
+    t1 = time.monotonic()
+    with gw.transcribe(audio, response_format="text") as r:
+        text = r.read().decode()
+        text_type = r.headers["content-type"]
+    t2 = time.monotonic()
+    deltas, done, first, errors = [], None, None, []
+    with gw.transcribe(audio, stream="true") as r:
+        sse_type = r.headers["content-type"]
+        for line in r:
+            line = line.decode().rstrip("\n")
+            if not line:
+                continue
+            first = first or time.monotonic()
+            event = json.loads(line.removeprefix("data: "))
+            if "error" in event:
+                errors.append(event["error"]["code"])
+            elif event["type"] == "transcript.text.delta":
+                deltas.append(event["delta"])
+            elif event["type"] == "transcript.text.done":
+                done = event["text"]
+    t3 = time.monotonic()
+    return {
+        "text": body["text"], "usage": body["usage"], "text_body": text, "text_content_type": text_type,
+        "sse_content_type": sse_type, "deltas": len(deltas), "sse_joined": "".join(deltas), "sse_done": done,
+        "sse_errors": errors,
+        "timings_s": {"json": round(t1 - t0, 3), "text": round(t2 - t1, 3), "sse_total": round(t3 - t2, 3),
+                      "sse_first_event": round((first or t3) - t2, 3)},
+    }
+
+
+def git_commit() -> str | None:
+    try:
+        out = subprocess.run(["git", "rev-parse", "HEAD"], cwd=ROOT, capture_output=True, text=True, check=True)
+        dirty = subprocess.run(["git", "status", "--porcelain", "--untracked-files=no"], cwd=ROOT,
+                               capture_output=True, text=True, check=True).stdout.strip()
+        return out.stdout.strip() + ("-dirty" if dirty else "")
+    except (OSError, subprocess.CalledProcessError):
+        return None
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--base-url", default="http://127.0.0.1:8000")
+    ap.add_argument("--api-key-env", default="OPENAI_API_KEY", help="environment variable holding the gateway key")
+    ap.add_argument("--ready-timeout", type=float, default=600.0)
+    ap.add_argument("--timeout", type=float, default=600.0, help="per HTTP request")
+    ap.add_argument("--max-chunk-seconds", type=float, default=30.0, help="the server's QUAN_MAX_CHUNK_SECONDS")
+    ap.add_argument("--out", type=Path)
+    args = ap.parse_args()
+    key = os.environ.get(args.api_key_env)
+    if not key:
+        raise SystemExit(f"set {args.api_key_env} to a gateway API key")
+
+    gw = Gateway(args.base_url, key, args.timeout)
+    failures: list[str] = []
+    report: dict = {"base_url": args.base_url, "commit": git_commit(), "started_unix": round(time.time())}
+    report["ready_wait_s"] = round(wait_ready(gw, args.ready_timeout), 3)
+    report["health"] = gw.get_json("/health", auth=False)
+    models = gw.get_json("/v1/models")
+    report["models"] = [m["id"] for m in models["data"]]
+    if MODEL not in report["models"] or gw.get_json(f"/v1/models/{MODEL}")["id"] != MODEL:
+        failures.append("models: served model missing")
+
+    baseline = json.loads((ROOT / "docs/baseline/offline.json").read_text())["results"]
+    manifest = json.loads((FIXTURES / "manifest.json").read_text())["files"]
+    inputs = [FIXTURES / n for n in SMALL] + ([LONG] if LONG.exists() else [])
+    report["results"] = {}
+    for path in inputs:
+        info = manifest[path.name]
+        res = run_fixture(gw, path.read_bytes())
+        res["audio_s"] = info["samples"] / info["sample_rate"]
+        name = path.name
+        if not (res["text"] == res["text_body"] == res["sse_joined"] == res["sse_done"]) or res["sse_errors"]:
+            failures.append(f"{name}: json/text/SSE disagree or SSE error {res['sse_errors']}")
+        if res["usage"] != {"type": "duration", "seconds": res["audio_s"]}:
+            failures.append(f"{name}: usage {res['usage']}")
+        if res["text_content_type"] != "text/plain; charset=utf-8" or not res["sse_content_type"].startswith(
+                "text/event-stream"):
+            failures.append(f"{name}: content types")
+        if res["audio_s"] <= args.max_chunk_seconds:
+            res["baseline"] = baseline[f"{name}:full"]["text"]
+            res["matches_baseline"] = res["text"] == res["baseline"]
+            if not res["matches_baseline"]:
+                failures.append(f"{name}: differs from the offline baseline")
+        else:
+            res["wer"] = round(wer(info["reference"], res["text"]), 4)
+            if res["wer"] > LONG_MAX_WER:
+                failures.append(f"{name}: WER {res['wer']} > {LONG_MAX_WER}")
+        report["results"][name] = res
+        print(f"{name}: {res['timings_s']} deltas={res['deltas']}", file=sys.stderr)
+    report["metrics_excerpt"] = [
+        line for line in gw.request("GET", "/metrics").read().decode().splitlines()
+        if line.startswith(("quan_transcriptions_total", "quan_jobs_total", "quan_decodes_total"))
+    ]
+    report["failures"] = failures
+    out = json.dumps(report, ensure_ascii=False, indent=2)
+    if args.out:
+        args.out.write_text(out + "\n")
+    print(out)
+    return 1 if failures else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

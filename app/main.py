@@ -25,6 +25,7 @@ from app.errors import APIError, install_handlers, internal_error, invalid_api_k
 from app.observability import Metrics, configure_logging, log, request_id
 from app.scheduler import Scheduler
 from app.schemas import Status
+from app.transcription import install as install_transcription
 
 PUBLIC_PATHS = frozenset({"/health", "/ready"})  # probes; everything else needs an API key
 WORKER_STOP_SECONDS = 5.0
@@ -70,6 +71,7 @@ def create_app(config: Config | None = None, engine: Engine | None = None) -> Fa
     app.state.config, app.state.metrics, app.state.worker, app.state.scheduler = config, metrics, worker, scheduler
     app.state.audio = audio
     install_handlers(app)
+    install_transcription(app, config, audio, scheduler, worker, metrics)
     app.add_middleware(GatewayMiddleware, api_keys=config.api_keys, metrics=metrics)
 
     @app.get("/health", response_model=Status)

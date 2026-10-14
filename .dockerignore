@@ -1,0 +1,8 @@
+# Allowlist: the build context holds only what the image needs. Never references/, models/, fixtures*, tests/,
+# .venv, .git, .env or secrets/.
+*
+!app/
+!assets/manifest.json
+!pyproject.toml
+!uv.lock
+**/__pycache__
