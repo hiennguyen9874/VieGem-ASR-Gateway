@@ -7,6 +7,7 @@
   M5 R3a realtime explicit commit done, CPU + GPU gate passed)
 - M3 design + deviations: docs/m3-design.vi.md; container results: docs/container-gate.vi.md
 - M5 design + results: docs/m5-design.vi.md (§9)
+- M7 tooling + CPU hardening: docs/m7-capacity.vi.md (production GPU capacity/limits gate still open; no exclusive GPU)
 - Baseline (M0 results, pins, measurements): docs/baseline.vi.md
 - API contract (pinned OpenAI SDK profile, payloads, error codes): docs/api-contract.vi.md
 
@@ -37,6 +38,8 @@ scripts/stage_models.py    # download pinned assets into ./models (or $QUAN_MODE
 scripts/fetch_fixtures.py  # build fixtures from FLEURS vi_vn (CC BY 4.0) at a pinned revision, verify SHA256
 scripts/smoke_inference.py # inference baseline: full/streaming, timings, RAM/VRAM, short-clip probe -> JSON
 scripts/smoke_server.py    # stdlib smoke of a running gateway (local/container) vs the offline baseline -> JSON
+scripts/benchmark.py       # M7 closed-loop REST/SSE/WS/mixed ramp + bounded soak; metadata-only JSON, no capacity claim
+deploy/nginx.conf.example  # TLS/SSE/WS proxy template; validate/test in target deployment before release
 scripts/probe_alignment.py # M4 P0: frame geometry, shift, spike latency, invariant, unk -> docs/baseline/alignment_probe.json
 scripts/eval_alignment.py  # M4 P4 (R2b gate): words vs hand annotations in tests/fixtures/alignment/ (none yet)
 Dockerfile, .dockerignore, compose.yaml  # R1 image (pinned digests, non-root, models mounted ro, no secrets)

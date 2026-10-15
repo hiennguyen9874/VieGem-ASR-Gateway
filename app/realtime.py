@@ -257,6 +257,14 @@ def client_event_id(event: object) -> str | None:
     return None
 
 
+def decode_base64(audio: str) -> bytes:
+    """Canonical padded base64 only (Python's validate=True still accepts excess padding)."""
+    pcm = base64.b64decode(audio, validate=True)
+    if base64.b64encode(pcm).decode("ascii") != audio:
+        raise ValueError("non-canonical base64")
+    return pcm
+
+
 # -- session ------------------------------------------------------------------------------------------------------
 
 class SessionGone(Exception):
@@ -418,7 +426,7 @@ class Session:
 
     async def _append(self, audio: str) -> None:
         try:
-            pcm = await _offload(len(audio), base64.b64decode, audio, validate=True)
+            pcm = await _offload(len(audio), decode_base64, audio)
         except ValueError:  # binascii.Error, or non-ASCII characters
             raise invalid_request("invalid_audio", "input_audio_buffer.append: audio is not valid base64.",
                                   "audio") from None

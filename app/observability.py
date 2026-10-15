@@ -8,6 +8,7 @@ import bisect
 import contextvars
 import json
 import logging
+import resource
 import sys
 import threading
 from collections.abc import Callable
@@ -68,6 +69,23 @@ class Metrics:
         self._values: dict[str, dict[Labels, float]] = {}
         self._hists: dict[str, dict[Labels, HistogramState]] = {}
         self._gauge_fns: dict[str, Callable[[], float]] = {}
+
+    def process_resources(self) -> None:
+        """Linux process-local cumulative CPU and lifetime RSS high-water mark.
+
+        CHILDREN includes reaped subprocesses (FFmpeg here); it is not per-request CPU
+        and excludes running children until they exit. Compare snapshots on an idle replica.
+        """
+        def cpu(who: int) -> float:
+            usage = resource.getrusage(who)
+            return usage.ru_utime + usage.ru_stime
+
+        self.gauge_fn("process_cpu_seconds_total", "Cumulative gateway process CPU seconds.",
+                      lambda: cpu(resource.RUSAGE_SELF))
+        self.gauge_fn("children_cpu_seconds_total", "Cumulative CPU seconds of reaped children (FFmpeg).",
+                      lambda: cpu(resource.RUSAGE_CHILDREN))
+        self.gauge_fn("process_max_rss_bytes", "Lifetime process RSS high-water mark, not a stage-local peak.",
+                      lambda: resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * (1 if sys.platform == "darwin" else 1024))
 
     def _declare(self, name: str, type_: str, help_: str) -> None:
         if self._help.setdefault(name, (type_, help_))[0] != type_:

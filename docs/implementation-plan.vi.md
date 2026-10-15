@@ -151,13 +151,30 @@ Thiết kế + số đo P0: [m4-design.vi.md](m4-design.vi.md). CPU: `tests/unit
 
 ### M7 — Capacity và production hardening (P1, bắt đầu từ R1)
 
-- [ ] `scripts/benchmark.py`: REST ngắn/dài, SSE, WS commits và mixed workload; số client tăng dần, cold/warm, LM on/off nếu có.
-- [ ] Đo RTF, queue wait p50/p95, first delta/final latency, decode CPU, RAM/VRAM peak, error/overload rates; định nghĩa first-delta từ mốc nào (upload start/end hoặc commit).
-- [ ] Chọn default limits từ số đo; ghi maximum tested load, không suy concurrent sessions từ benchmark H100 của tác giả.
-- [ ] Soak/restart/OOM/hung-worker tests, proxy timeouts/TLS, disk budget, log redaction và secret rotation; recovery không nhận traffic khi chưa ready.
-- [ ] Chỉ sau đo mới làm replica/GPU + sticky WS routing; microbatch REST và KenLM default là optimization riêng có regression tests.
+**Trạng thái: tooling + CPU hardening xong; production capacity gate còn mở.** Thiết kế/runbook và lệnh tái lập:
+[m7-capacity.vi.md](m7-capacity.vi.md). Không đánh dấu done từ fake-engine benchmark.
+
+- [x] `scripts/benchmark.py`: REST ngắn/dài, SSE, WS commits (socket reuse, paced 20 ms/burst) và mixed workload;
+  clients tăng dần, cold-serving/warm, bounded soak. LM không có trong server → ghi greedy/off, không giả LM-on.
+  Cold process startup đo riêng từ lifecycle log; readiness wait của client không phải startup time.
+- [x] Instrument/report RTF, interval queue wait p50/p95 upper bucket bounds, upload-start→delta/final,
+  commit→delta/completed, decode wall và cumulative reaped-FFmpeg CPU; optional host-PID RSS/VRAM sampler,
+  error/overload rates. Missing samples → null. CPU harness evidence: `docs/baseline/m7-cpu-diagnostic.json`.
+- [ ] Chạy GPU riêng, chốt default/deployment limits từ số đo và maximum tested load. **Blocked:** hai RTX 5090
+  trên host đều đang có workload khác; không dùng GPU chia sẻ để công bố capacity. Defaults giữ finite safety budgets,
+  chưa là production limits; không suy concurrent sessions từ benchmark H100 của tác giả.
+- [x] CPU: bounded mixed soak/cleanup, simulated OOM recovery, hung probes, fresh-instance warm-up barrier,
+  key overlap/rotation, log redaction (kể cả arbitrary path). HTTP/TLS/WSS client tests; drain/recovery/disk-budget
+  regression từ scheduler/audio suites. Realtime canonical base64 fix cho excess padding Python vẫn chấp nhận.
+- [ ] Release drills: GPU soak ≥1h, real process/container restart/kill, real CUDA OOM/hang watchdog,
+  proxy TLS/timeouts/disk/secret rotation trên deployment thật. Template `deploy/nginx.conf.example` và runbook đã có,
+  nhưng không coi template/CPU fault injection là evidence production.
+- [x] Giữ replica/GPU + sticky WS, REST microbatch, KenLM là optimization riêng sau đo; chưa bật tính năng nào.
 
 **Gate:** deployment runbook có giới hạn được đo, cách drain/restart và rollback; SLA nếu cần phải chốt workload/hardware trước, không đặt số latency tùy ý.
+
+**Evidence CPU:** `CUDA_VISIBLE_DEVICES='' uv run --extra cu128 --offline pytest tests/unit tests/scheduler tests/audio tests/contract -q`
+→ **429 passed** (38.30s). Benchmark diagnostic clients 1/4/16 → 76/223/235 requests thành công; **không phải GPU release evidence**.
 
 ## 4. Test layout và CI
 

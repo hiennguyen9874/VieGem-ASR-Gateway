@@ -45,8 +45,9 @@ PCM_RATE = 24000
 
 
 class Gateway:
-    def __init__(self, base_url: str, api_key: str, timeout: float):
+    def __init__(self, base_url: str, api_key: str, timeout: float, ssl_context=None):
         self.base, self.key, self.timeout = base_url.rstrip("/"), api_key, timeout
+        self.ssl_context = ssl_context
 
     def request(self, method: str, path: str, body: bytes | None = None, headers: dict | None = None,
                 auth: bool = True):
@@ -54,7 +55,7 @@ class Gateway:
         if auth:
             h["Authorization"] = f"Bearer {self.key}"
         req = urllib.request.Request(self.base + path, data=body, method=method, headers=h)
-        return urllib.request.urlopen(req, timeout=self.timeout)
+        return urllib.request.urlopen(req, timeout=self.timeout, context=self.ssl_context)
 
     def get_json(self, path: str, auth: bool = True):
         with self.request("GET", path, auth=auth) as r:

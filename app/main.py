@@ -30,6 +30,16 @@ from app.transcription import install as install_transcription
 
 PUBLIC_PATHS = frozenset({"/health", "/ready"})  # probes; everything else needs an API key
 WORKER_STOP_SECONDS = 5.0
+LOG_PATHS = PUBLIC_PATHS | {"/metrics", "/v1/models", "/v1/audio/transcriptions", "/v1/realtime"}
+
+
+def log_path(path: str) -> str:
+    """Do not echo arbitrary client path components into metadata logs."""
+    if path in LOG_PATHS:
+        return path
+    if path.startswith("/v1/models/"):
+        return "/v1/models/{model}"
+    return "<unmatched>"
 
 
 def create_app(config: Config | None = None, engine: Engine | None = None) -> FastAPI:
@@ -43,6 +53,7 @@ def create_app(config: Config | None = None, engine: Engine | None = None) -> Fa
     if not config.spool_dir.is_dir():
         raise ConfigError(f"QUAN_SPOOL_DIR is not a directory: {config.spool_dir}")
     metrics = Metrics()
+    metrics.process_resources()
     try:
         audio = AudioIngress(config, metrics)
     except FileNotFoundError as e:
@@ -144,7 +155,7 @@ class GatewayMiddleware:
             else:
                 await self._app(scope, receive, send_with_id)
         except Exception:
-            log(logging.ERROR, "http.unhandled_error", exc_info=True, path=scope["path"][:200])
+            log(logging.ERROR, "http.unhandled_error", exc_info=True, path=log_path(scope["path"]))
             if status is None:
                 await send_error(scope, send_with_id, internal_error())
         finally:
@@ -152,6 +163,6 @@ class GatewayMiddleware:
             self._metrics.inc("http_requests_total", "HTTP requests and WebSocket handshakes by status.",
                               status=str(status))
             # Path only: no query string, headers, body or client filename.
-            log(logging.INFO, "http.request", method=scope.get("method", "WS"), path=scope["path"][:200],
+            log(logging.INFO, "http.request", method=scope.get("method", "WS"), path=log_path(scope["path"]),
                 status=status, duration_ms=round(duration * 1000, 1))
             request_id.reset(token)
