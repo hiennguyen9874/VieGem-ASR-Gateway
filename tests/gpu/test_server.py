@@ -76,7 +76,7 @@ def test_transcripts_match_baseline_in_every_format(srv):
     assert timed(srv, FIXTURES / "silence_2s.wav", "srt") == []
 
 
-GAP_TOLERANCE_S = 1.5  # docs/m4-design.vi.md §2.1: cue edges measured within 1.16 s of a zero gap (clip silence)
+GAP_TOLERANCE_S = 1.5  # alignment probe: cue edges measured within 1.16 s of a zero gap (clip silence)
 
 
 def test_cues_respect_known_silences_across_a_chunk_boundary(srv, tmp_path):

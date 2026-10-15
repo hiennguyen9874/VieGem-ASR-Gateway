@@ -1,113 +1,117 @@
-# QUAN-Transcribe gateway (R1 + R2a + R3a)
+# QUAN-Transcribe gateway
 
-Server nhận dạng tiếng nói tiếng Việt cho [QUAN-Transcribe-1.0](https://huggingface.co/qnguyen3/QUAN-Transcribe-1.0)
-với một **tập con** API OpenAI: `GET /v1/models`, `POST /v1/audio/transcriptions` (`json`, `text`, SSE,
-`verbose_json`, `srt`, `vtt`) và Realtime transcription `GET /v1/realtime` (WebSocket, commit tường minh). Không
-phải tương thích OpenAI đầy đủ: xem capability matrix và payload ở [docs/api-contract.vi.md](docs/api-contract.vi.md).
+Server nhận dạng tiếng nói tiếng Việt cho [QUAN-Transcribe-1.0](https://huggingface.co/qnguyen3/QUAN-Transcribe-1.0),
+triển khai bằng Docker, với một **tập con** API OpenAI:
 
-- Một process = một model instance = một GPU; mọi inference chạy tuần tự trên một worker thread, có queue công bằng.
-- Output là text gốc của model: chữ thường, không dấu câu, số viết bằng chữ. Subtitle `srt`/`vtt` có thời gian từ
-  đường CTC greedy (cue cắt ở khoảng lặng ≥ 0.5 s; start có thể trễ ~1 âm tiết). `verbose_json` không có `segments`;
-  word timestamps (`timestamp_granularities[]=word`) chưa bật (chờ alignment gate). Không có logprobs; chỉ
-  `language=vi`.
-- Realtime chỉ là **transcription với commit tường minh** (`turn_detection: null`): transcript chỉ có sau
-  `input_audio_buffer.commit`, không có partial trước commit, không có VAD (R3b) hay Realtime hội thoại.
-- Alias `whisper-1` (tắt mặc định, `QUAN_WHISPER_ALIAS=true`) chỉ để client cũ chạy được: vẫn là model QUAN, output
-  khác Whisper.
+- `GET /v1/models`, `GET /v1/models/{id}`
+- `POST /v1/audio/transcriptions`: `json`, `text`, SSE (`stream=true`), `verbose_json`, `srt`, `vtt`
+- `GET /v1/realtime`: Realtime transcription qua WebSocket, commit tường minh (`turn_detection: null`)
 
-Thiết kế: [docs/deployment-design.vi.md](docs/deployment-design.vi.md), [docs/m3-design.vi.md](docs/m3-design.vi.md),
-[docs/m5-design.vi.md](docs/m5-design.vi.md).
-Baseline và số đo: [docs/baseline.vi.md](docs/baseline.vi.md), `docs/baseline/server.json`.
+Không phải tương thích OpenAI đầy đủ. Payload, mã lỗi và capability matrix: [docs/api-contract.vi.md](docs/api-contract.vi.md).
 
-## 1. Chuẩn bị model (một lần, cần mạng)
+Giới hạn cần biết:
 
-```bash
-uv sync --extra cu126
-HF_TOKEN=<token đọc được qnguyen3/QUAN-Transcribe-1.0> uv run --extra cu126 scripts/stage_models.py   # -> ./models, kiểm tra SHA256
-uv run --extra cu126 scripts/stage_models.py --verify                                                  # kiểm tra lại, không cần mạng
-```
+- Output là text gốc của model: chữ thường, không dấu câu, số viết bằng chữ. Chỉ `language=vi`; không có logprobs.
+- `srt`/`vtt` có thời gian từ đường CTC greedy (start của cue có thể trễ ~1 âm tiết). `verbose_json` không có
+  `segments`; word timestamps chưa bật.
+- Realtime: transcript chỉ có sau `input_audio_buffer.commit`; không có partial, không có VAD.
+- Alias `whisper-1` (tắt mặc định, `QUAN_WHISPER_ALIAS=true`) chỉ để client cũ chạy được: vẫn là model QUAN.
 
-### Chọn CUDA wheel (local và Docker)
+Tài liệu: [kiến trúc](docs/deployment-design.vi.md) · [API contract](docs/api-contract.vi.md) ·
+[baseline và pins](docs/baseline.vi.md) · [kiểm định image](docs/container-gate.vi.md) ·
+[trạng thái](docs/implementation-plan.vi.md) · [roadmap](docs/roadmap.md)
 
-| Profile | PyTorch pin | Dùng cho |
-|---|---|---|
-| `cu126` | `2.14.1+cu126` | Baseline hiện có; GPU tới `sm_90` |
-| `cu128` | `2.11.0+cu128` | CUDA 12.8, gồm Blackwell/RTX 5090 (`sm_120`) |
+## 1. Yêu cầu
 
-Luôn chọn **một** extra cho `uv sync` **và** mọi `uv run`; thay `--extra cu126` trong các lệnh bên dưới bằng
-`--extra cu128` trên RTX 5090. Không chạy `uv sync`/`uv run` trần: dependency torch của upstream có thể chọn wheel
-PyPI ngoài hai profile đã kiểm chứng. Không dùng `--all-extras` (hai profile xung đột). Chuyển profile bằng
-`uv sync --extra cu128` rồi tiếp tục `uv run --extra cu128 ...`; không dùng lẫn hai môi trường khi server đang chạy.
-PyTorch không phát hành 2.14.1 cho cu128 nên profile này pin 2.11.0 riêng, không đổi baseline cu126.
-CUDA toolkit trên host không cần cài: wheel mang CUDA runtime; driver host phải tương thích (cu128 trên driver
-575.64.03 của host này, cu126/cu128 yêu cầu Linux driver ít nhất 560.28.03/570.26 cho toolkit tương ứng).
+- Linux, Docker Engine + Compose v2, NVIDIA Container Toolkit, một GPU NVIDIA (~2.5 GB VRAM cho mỗi instance).
+- [uv](https://docs.astral.sh/uv/) trên host, chỉ để tải model (staging) và chạy smoke test.
+- Chấp nhận [Gemma Terms of Use](https://ai.google.dev/gemma/terms) (weights QUAN và base `google/embeddinggemma-2`).
 
-Docker mặc định `TORCH_CUDA=cu126`; Blackwell:
+Chọn **một** CUDA profile theo GPU:
+
+| Profile | PyTorch | GPU | Driver Linux tối thiểu |
+|---|---|---|---|
+| `cu126` (mặc định) | 2.14.1+cu126 | tới `sm_90` (A100, H100, …) | 560.28.03 |
+| `cu128` | 2.11.0+cu128 | thêm Blackwell `sm_120` (RTX 5090, …) | 570.26 |
+
+Model và code pins giống nhau ở cả hai profile. Không cần cài CUDA toolkit trên host.
+
+## 2. Triển khai
 
 ```bash
-docker build --build-arg TORCH_CUDA=cu128 -t quan-transcribe:cu128 .
-QUAN_BUILD_CUDA=cu128 QUAN_GPU=<gpu> docker compose up -d --build
-QUAN_GPU=<gpu> uv run --extra cu128 pytest tests/container --container-cuda=cu128
+# 1. Tải model đã pin vào ./models và kiểm tra SHA256 (một lần, cần mạng)
+uv run --extra cu126 scripts/stage_models.py          # HF_TOKEN=<token> nếu repo yêu cầu
+uv run --extra cu126 scripts/stage_models.py --verify # kiểm tra lại, không cần mạng
+
+# 2. API key: một key mỗi dòng, ≥ 16 ký tự, đọc được bởi UID 10001 trong container
+mkdir -p secrets
+python3 -c "import secrets; print(secrets.token_urlsafe(32))" > secrets/quan_api_keys
+sudo chown 10001 secrets/quan_api_keys && sudo chmod 0400 secrets/quan_api_keys
+
+# 3. Build + chạy trên một GPU (nvidia-smi để chọn GPU trống)
+QUAN_GPU=0 docker compose up -d --build                         # cu126
+QUAN_BUILD_CUDA=cu128 QUAN_GPU=0 docker compose up -d --build   # Blackwell
+
+# 4. Chờ sẵn sàng (load + warm-up)
+curl -s 127.0.0.1:18000/ready                                   # {"status":"ready"}
+
+# 5. Smoke test (tùy chọn): mọi format + Realtime, so với baseline
+OPENAI_API_KEY=$(sudo cat secrets/quan_api_keys | head -1) \
+    uv run --extra cu126 scripts/smoke_server.py --base-url http://127.0.0.1:18000
 ```
 
-`TORCH_CUDA` là build arg; `QUAN_BUILD_CUDA`/`QUAN_GPU` chỉ cho compose/tests, không export vào shell khởi động
-server trực tiếp (config từ chối các biến `QUAN_*` lạ). Không tự đổi CUDA profile theo GPU hay fallback sang CPU.
+`uv run` luôn kèm đúng một `--extra cu126` hoặc `--extra cu128` (không chạy `uv` trần, không `--all-extras`).
+`QUAN_BUILD_CUDA` và `QUAN_GPU` chỉ dùng cho compose.
 
-Revision và hash của mọi file nằm trong `assets/manifest.json`. `HF_TOKEN` chỉ dùng lúc staging; server không cần
-token và không truy cập Hub.
+Image (`quan-transcribe:r1-<profile>`): Ubuntu 24.04 (pin digest), Python 3.12.14, FFmpeg 6.1.1, user `10001`, chỉ
+chứa `app/` và venv. Không có model, `HF_TOKEN` hay API key trong image; server không truy cập Hub.
+`compose.yaml` chạy:
 
-## 2. Chạy server (local)
+- model mount `./models:/models:ro`, key qua Docker secret `/run/secrets/quan_api_keys`;
+- rootfs read-only, tmpfs `/tmp` 512 MiB (spool upload), `HF_HUB_OFFLINE=1`;
+- port chỉ bind `127.0.0.1:18000`; `restart: unless-stopped`; `stop_grace_period: 70s`.
 
-```bash
-nvidia-smi                                   # chọn GPU còn trống
-export QUAN_API_KEYS=$(python3 -c "import secrets; print(secrets.token_urlsafe(32))")
-CUDA_VISIBLE_DEVICES=<gpu> HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 uv run --extra cu126 --offline uvicorn --factory app.main:create_app \
-    --host 127.0.0.1 --port 18080 --workers 1 --no-access-log --timeout-graceful-shutdown 30 \
-    --ws websockets-sansio --ws-max-size 2097152
-curl -s localhost:18080/ready                 # {"status":"ready"} sau khi load + warm-up (~15 s)
-```
+**Một container = một model = một GPU**, luôn một Uvicorn worker. Nhiều GPU: chạy nhiều container (mỗi container
+một `QUAN_GPU`, một port host) sau load balancer; WebSocket cần sticky routing.
 
-Ví dụ local dùng port `18080`; chọn port khác nếu đang bị chiếm (port `8000` trên host này đã có service khác, nên mặc định dùng `18000`).
-
-Luôn `--workers 1`: muốn dùng nhiều GPU thì chạy nhiều process (mỗi process một `CUDA_VISIBLE_DEVICES`, một port)
-sau load balancer. Cần `ffmpeg` trên `PATH`. Luôn ghi `--ws websockets-sansio --ws-max-size 2097152`: mặc định
-`auto` âm thầm tắt WebSocket nếu thiếu thư viện, và giới hạn 2 MiB/message là một phần của contract.
+**TLS:** gateway không làm TLS, rate limit theo client hay CORS. Khi expose ra ngoài localhost, đặt sau hạ tầng
+HTTPS của bạn với: SSE không buffer, hỗ trợ WebSocket upgrade, read timeout ≥ `QUAN_REQUEST_TIMEOUT_SECONDS`
+(600 s), body ≥ `QUAN_MAX_UPLOAD_BYTES`. JS SDK Realtime chỉ kết nối `wss:`.
 
 ## 3. Gọi API
 
 ```bash
-curl -s localhost:18080/v1/models -H "Authorization: Bearer $QUAN_API_KEYS"
-curl -s localhost:18080/v1/audio/transcriptions -H "Authorization: Bearer $QUAN_API_KEYS" \
+KEY=$(sudo cat secrets/quan_api_keys | head -1)
+curl -s 127.0.0.1:18000/v1/models -H "Authorization: Bearer $KEY"
+curl -s 127.0.0.1:18000/v1/audio/transcriptions -H "Authorization: Bearer $KEY" \
     -F model=quan-transcribe-1.0 -F file=@tests/fixtures/vi_a.wav
-curl -s localhost:18080/v1/audio/transcriptions -H "Authorization: Bearer $QUAN_API_KEYS" \
-    -F model=quan-transcribe-1.0 -F response_format=text -F file=@tests/fixtures/vi_a.wav
-curl -sN localhost:18080/v1/audio/transcriptions -H "Authorization: Bearer $QUAN_API_KEYS" \
+curl -sN 127.0.0.1:18000/v1/audio/transcriptions -H "Authorization: Bearer $KEY" \
     -F model=quan-transcribe-1.0 -F stream=true -F file=@tests/fixtures/vi_a.wav
-curl -s localhost:18080/v1/audio/transcriptions -H "Authorization: Bearer $QUAN_API_KEYS" \
-    -F model=quan-transcribe-1.0 -F response_format=srt -F file=@tests/fixtures/vi_a.wav   # hoặc vtt, verbose_json
+curl -s 127.0.0.1:18000/v1/audio/transcriptions -H "Authorization: Bearer $KEY" \
+    -F model=quan-transcribe-1.0 -F response_format=srt -F file=@tests/fixtures/vi_a.wav   # text, vtt, verbose_json
 ```
 
-OpenAI Python SDK (`openai==3.31.0` đã kiểm thử; JS `openai@7.33.0` tương tự):
+OpenAI Python SDK (đã kiểm thử `openai==3.31.0`; JS `openai@7.33.0`):
 
 ```python
 from openai import OpenAI
 
-client = OpenAI(base_url="http://127.0.0.1:18080/v1", api_key="<QUAN key>")
-with open("tests/fixtures/vi_a.wav", "rb") as f:
+client = OpenAI(base_url="http://127.0.0.1:18000/v1", api_key="<QUAN key>")
+with open("audio.mp3", "rb") as f:
     print(client.audio.transcriptions.create(file=f, model="quan-transcribe-1.0").text)
-with open("tests/fixtures/vi_a.wav", "rb") as f:
+with open("audio.mp3", "rb") as f:
     for event in client.audio.transcriptions.create(file=f, model="quan-transcribe-1.0", stream=True):
         print(event.type, getattr(event, "delta", None) or getattr(event, "text", ""))
 ```
 
-Realtime (Python SDK cần `openai[realtime]`): audio PCM16 little-endian mono 24 kHz, base64, nhiều commit trên một
-socket; mỗi commit thành một item với `delta` (một mỗi chunk ≤ 30 s) rồi `completed`.
+Realtime (`openai[realtime]`): PCM16 little-endian mono 24 kHz, base64; nhiều commit trên một socket, mỗi commit là
+một item với các `delta` (một mỗi chunk ≤ 30 s) rồi `completed`.
 
 ```python
 import base64
 
 with client.realtime.connect(model="quan-transcribe-1.0") as conn:
-    conn.recv()                                            # session.created (turn_detection: null)
+    conn.recv()                                            # session.created
     for packet in pcm16_24k_packets:                       # bytes, ví dụ 20–200 ms mỗi packet
         conn.input_audio_buffer.append(audio=base64.b64encode(packet).decode())
     conn.input_audio_buffer.commit()
@@ -117,115 +121,63 @@ with client.realtime.connect(model="quan-transcribe-1.0") as conn:
             break
 ```
 
-JS SDK (`OpenAIRealtimeWS({intent: "transcription"}, client)`) luôn dùng `wss:`: cần TLS (proxy §6 hoặc Uvicorn
-`--ssl-certfile/--ssl-keyfile`). Lỗi event (`error`) không đóng socket; event, mã lỗi, thứ tự: contract §6.
+Audio: WAV, FLAC, MP3, MP4/M4A (AAC/ALAC), OGG (Vorbis/Opus/FLAC), WEBM/Matroska, nhận diện theo nội dung. Audio dài
+được cắt thành chunk ≤ 30 s tại điểm yên lặng; SSE gửi một delta mỗi chunk. Audio ≤ 100 ms → `""`. `srt`/`vtt`/
+`verbose_json` không stream (`stream=true` → 400). Lỗi dùng envelope OpenAI; danh sách mã lỗi: contract §7.
 
-Định dạng audio: WAV, FLAC, MP3, MP4/M4A (AAC/ALAC), OGG (Vorbis/Opus/FLAC), WEBM/Matroska; nhận diện theo nội dung.
-Audio dài được cắt thành chunk ≤ 30 s tại điểm yên lặng; SSE gửi một delta cho mỗi chunk xong. Audio ≤ 100 ms → `""`.
-`srt`/`vtt`/`verbose_json` không stream được (`stream=true` → 400). Lỗi dùng envelope OpenAI (`error.code`), danh
-sách ở contract §7.
+## 4. Cấu hình
 
-## 4. Cấu hình và giới hạn
-
-Biến `QUAN_*` được kiểm tra lúc khởi động (biến lạ, giá trị ≤ 0 hoặc không nhất quán → không start). Đầy đủ:
-`app/config.py`. Những biến hay chỉnh:
+Thêm biến `QUAN_*` vào `environment:` của service (ví dụ trong `compose.override.yaml`). Biến lạ, giá trị ≤ 0 hoặc
+không nhất quán → container không start. Đầy đủ: `app/config.py`.
 
 | Biến | Mặc định | Ý nghĩa |
 |---|---|---|
-| `QUAN_API_KEYS` / `QUAN_API_KEYS_FILE` | (bắt buộc) | Key Bearer, ≥ 16 ký tự; file: một key mỗi dòng. Không được trùng `HF_TOKEN` |
-| `QUAN_MODELS_DIR`, `QUAN_DEVICE` | `models`, `cuda` | Thư mục staging, device |
+| `QUAN_API_KEYS_FILE` / `QUAN_API_KEYS` | (bắt buộc) | Key Bearer (compose dùng file secret) |
+| `QUAN_WHISPER_ALIAS` | `false` | Chấp nhận model id `whisper-1` |
+| `QUAN_LOG_LEVEL` | `INFO` | Mức log |
 | `QUAN_MAX_UPLOAD_BYTES` | 25 MiB | Cả body multipart → 413 |
 | `QUAN_MAX_AUDIO_SECONDS` | 1800 | Thời lượng sau decode → 400 `audio_too_long` |
 | `QUAN_MAX_DECODED_SECONDS` | 3600 | Audio đã decode giữ trong RAM của mọi request (≈ 64 KB/s) → 429 |
-| `QUAN_MAX_SPOOL_BYTES`, `QUAN_SPOOL_DIR` | 200 MiB, `/tmp` | File tạm của upload đang nhận → 429 |
+| `QUAN_MAX_SPOOL_BYTES` | 200 MiB | File tạm của upload đang nhận (nằm trong tmpfs 512 MiB) → 429 |
 | `QUAN_MAX_CHUNK_SECONDS` | 30 | Độ dài chunk (giữ 30 để giống baseline) |
-| `QUAN_QUEUE_MAX_LANES` | 32 | Request đồng thời (đang decode/chờ/infer) → 429 |
-| `QUAN_QUEUE_TIMEOUT_SECONDS` | 30 | Chờ chỗ trong queue/slot decode tối đa → 429 |
-| `QUAN_REQUEST_TIMEOUT_SECONDS` | 600 | Tổng upload + decode + queue + infer + gửi response → 503/event `request_timeout` |
+| `QUAN_QUEUE_MAX_LANES` | 32 | Request/session đồng thời → 429 |
+| `QUAN_QUEUE_TIMEOUT_SECONDS` | 30 | Chờ chỗ trong queue tối đa → 429 |
+| `QUAN_REQUEST_TIMEOUT_SECONDS` | 600 | Tổng upload + decode + queue + infer + gửi → 503 `request_timeout` |
 | `QUAN_SEND_TIMEOUT_SECONDS` | 10 | Một lần gửi SSE/WebSocket; client không đọc → ngắt |
-| `QUAN_MAX_SESSIONS` | 16 | Realtime session đồng thời (≤ `QUAN_QUEUE_MAX_LANES`, mỗi session giữ một lane) → handshake 429 |
-| `QUAN_MAX_SESSION_SECONDS` | 3600 | Tuổi tối đa một session → `session_expired`, đóng |
-| `QUAN_SESSION_IDLE_TIMEOUT_SECONDS` | 120 | Không có event client và không có item đang chờ → `idle_timeout`, đóng |
+| `QUAN_MAX_SESSIONS` | 16 | Realtime session đồng thời (≤ lanes) → handshake 429 |
+| `QUAN_MAX_SESSION_SECONDS` | 3600 | Tuổi tối đa một session → `session_expired` |
+| `QUAN_SESSION_IDLE_TIMEOUT_SECONDS` | 120 | Session không hoạt động → `idle_timeout` |
 | `QUAN_MAX_TURN_SECONDS` | 120 | Audio chưa commit của một session → `input_audio_buffer_full` |
-| `QUAN_MAX_PENDING_ITEMS` | 4 | Item đã commit chưa xong của một session → `too_many_pending_items` |
+| `QUAN_MAX_PENDING_ITEMS` | 4 | Item đã commit chưa xong → `too_many_pending_items` |
 | `QUAN_INFER_HANG_SECONDS` | 120 | Một call inference lâu hơn → worker "hung", `/health` 503 |
 | `QUAN_SHUTDOWN_DRAIN_SECONDS` | 30 | Chờ job đang chạy khi tắt |
 
-Các giá trị mặc định chưa được benchmark (M7); đo trên phần cứng của bạn trước khi tăng.
+Các mặc định là giới hạn an toàn hữu hạn, **chưa phải capacity đã đo** (xem [roadmap](docs/roadmap.md) R4). Đo
+trên phần cứng của bạn trước khi tăng.
 
-## 5. Docker
+## 5. Vận hành
 
-Image: Ubuntu 24.04 (pin digest), Python 3.12.14, FFmpeg 6.1.1, chạy user `10001`, chỉ chứa `app/`, venv và
-`assets/manifest.json`. Model mount read-only lúc chạy; không có token/key trong image. Cần NVIDIA Container Toolkit.
+- **Readiness/liveness:** `/ready` 200 khi model đã load + warm-up và không đang drain/recover (dùng cho load
+  balancer). `/health` 503 khi load/recovery lỗi hoặc một call inference treo quá `QUAN_INFER_HANG_SECONDS`.
+  Docker không tự restart container chỉ vì `unhealthy`: dùng watchdog/orchestrator (autoheal, systemd, Kubernetes
+  `livenessProbe`). Lỗi inference đơn lẻ trả 500 `inference_failed`, worker tự warm-up lại.
+- **Dừng/cập nhật:** `docker compose stop` (SIGTERM) ngừng nhận kết nối mới, request đang chạy được làm xong (≤ 30 s),
+  drain queue (≤ 30 s); log `server.stopped` có `drained`. WebSocket **không** được drain: đóng với code 1012, item
+  chưa `completed` bị mất, client kết nối lại và gửi lại audio. Rolling update: bỏ instance khỏi load balancer trước.
+- **Rollback:** giữ image digest + CUDA profile của bản tốt, chạy lại digest đó với cùng `./models`; chờ `/ready`
+  và chạy smoke trước khi mở traffic.
+- **Xoay vòng key** (key chỉ đọc lúc khởi động): thêm key mới vào file, restart, chuyển client, bỏ key cũ, restart.
+- **Log/metrics:** log JSON ra stderr (`docker compose logs`), chỉ metadata (`request_id`, thời lượng, outcome);
+  không ghi audio, transcript, key, tên file. `/metrics` (Prometheus, cần API key; không expose public):
+  `quan_transcriptions_total`, `quan_queue_wait_seconds`, `quan_infer_seconds`, `quan_ready`, `quan_worker_hung`,
+  `quan_realtime_sessions`, `quan_realtime_commit_to_completed_seconds`, …
+- `HF_TOKEN` chỉ dùng lúc staging, không đưa vào container.
 
-```bash
-uv run --extra cu126 scripts/stage_models.py                              # trên host: ./models
-mkdir -p secrets && python3 -c "import secrets; print(secrets.token_urlsafe(32))" > secrets/quan_api_keys
-sudo chown 10001 secrets/quan_api_keys && sudo chmod 0400 secrets/quan_api_keys   # đọc được bởi user trong container
-QUAN_GPU=<gpu> docker compose up -d --build
-OPENAI_API_KEY=$(sudo cat secrets/quan_api_keys) uv run --extra cu126 scripts/smoke_server.py --base-url http://127.0.0.1:18000
-```
-
-`compose.yaml`: rootfs read-only + tmpfs `/tmp`, `HF_HUB_OFFLINE=1`, port chỉ bind `127.0.0.1`, `stop_grace_period:
-70s`. Gate container (`tests/container/test_image.py`, chạy với `QUAN_GPU=<gpu> uv run --extra cu126 pytest tests/container`):
-build, non-root, không có secret/file thừa, `--network none` → `/ready`, smoke (gồm Realtime), SIGTERM khi đang stream,
-restart; thêm auth/errors/overload và concurrent isolation.
-**Trạng thái: GPU container gate đạt với cu128 trên RTX 5090: 6 passed, không skip.** cu126 giữ nguyên baseline,
-không hỗ trợ RTX 5090; dùng `--extra cu128` và `--container-cuda=cu128` cho GPU này.
-CPU diagnostics (`uv run --extra cu126 pytest tests/container --container-device=cpu`) không thay thế GPU gate.
-Bằng chứng: [docs/container-gate.vi.md](docs/container-gate.vi.md), `docs/baseline/server-container-cu128.json`.
-
-## 6. Reverse proxy và TLS
-
-Gateway không làm TLS, rate limit theo client hay CORS. Đặt sau reverse proxy, ví dụ nginx cho server local
-(port `18080`; đổi upstream thành port `18000` nếu dùng compose mặc định):
-
-```nginx
-location /v1/ {
-    proxy_pass http://127.0.0.1:18080;
-    proxy_http_version 1.1;
-    proxy_buffering off;            # SSE: không gom event (server cũng gửi X-Accel-Buffering: no)
-    proxy_request_buffering off;    # stream upload tới gateway, giới hạn được kiểm tra ở gateway
-    proxy_read_timeout 620s;        # >= QUAN_REQUEST_TIMEOUT_SECONDS: không có heartbeat trong lúc chờ inference
-    proxy_send_timeout 620s;
-    client_max_body_size 26m;       # >= QUAN_MAX_UPLOAD_BYTES (+ overhead multipart nhỏ)
-}
-location = /v1/realtime {
-    proxy_pass http://127.0.0.1:18080;
-    proxy_http_version 1.1;
-    proxy_set_header Upgrade $http_upgrade;   # WebSocket upgrade
-    proxy_set_header Connection "upgrade";
-    proxy_read_timeout 620s;        # > QUAN_SESSION_IDLE_TIMEOUT_SECONDS và thời gian một item
-    proxy_send_timeout 620s;
-}
-```
-
-Client JS SDK Realtime chỉ kết nối `wss:`, nên proxy phải làm TLS cho `/v1/realtime`.
-
-Không public `/metrics` (cần API key nhưng vẫn nên chỉ cho mạng nội bộ). `/health`, `/ready` không cần key.
-
-## 7. Vận hành và khôi phục
-
-- `/ready` 200 khi model đã load + warm-up và không đang drain/recover: dùng cho readiness/load balancer.
-- `/health` 503 `unhealthy` khi load/recovery lỗi hoặc một call inference treo quá `QUAN_INFER_HANG_SECONDS`.
-  Process **không tự thoát** trong trường hợp này và Docker không restart container chỉ vì `unhealthy`: dùng
-  supervisor có liveness (Kubernetes `livenessProbe` trên `/health`, systemd watchdog script, hoặc autoheal) để
-  restart. Lỗi inference đơn lẻ trả 500 `inference_failed` và worker tự warm-up lại.
-- Tắt (SIGTERM): ngừng nhận kết nối mới, request đang chạy được làm xong (tối đa 30 s), rồi drain queue (30 s) và
-  dừng worker; log `server.stopped` có `drained`. Realtime **không** được drain: Uvicorn đóng mọi WebSocket với
-  1012 ngay khi tắt, item chưa `completed` bị mất; client kết nối lại và gửi lại audio. Rolling restart: ngừng route
-  session mới ở load balancer trước SIGTERM.
-- Log JSON ra stderr, chỉ metadata (`request_id`, thời lượng, outcome); không ghi audio, transcript, key, tên file.
-  `/metrics` (Prometheus): `quan_transcriptions_total{response_format,stream,outcome}`, `quan_jobs_total`,
-  `quan_queue_wait_seconds`, `quan_infer_seconds`, `quan_sse_first_event_seconds`, `quan_ready`, `quan_worker_hung`,
-  `quan_realtime_sessions`, `quan_realtime_sessions_total{outcome}`, `quan_realtime_items_total{outcome}`,
-  `quan_realtime_commit_to_completed_seconds`, ….
-- Xoay vòng key: thêm key mới vào file, restart, đổi client, bỏ key cũ, restart.
-
-## 8. Kiểm thử
+## 6. Kiểm thử
 
 ```bash
-uv run --extra cu126 pytest                                     # CPU: unit, scheduler, audio, contract (GPU/container tests skip)
-(cd tests/contract/js && npm ci && npm test)      # JS SDK contract (server tests chạy qua pytest)
-CUDA_VISIBLE_DEVICES=<gpu> uv run --extra cu126 pytest tests/gpu
+uv run --extra cu126 pytest                                         # CPU: unit, scheduler, audio, contract
+QUAN_GPU=0 uv run --extra cu128 pytest tests/container --container-cuda=cu128   # gate image trên GPU
 ```
+
+Chi tiết gate image: [docs/container-gate.vi.md](docs/container-gate.vi.md). Lệnh phát triển: `AGENTS.md`.

@@ -1,7 +1,7 @@
 """Inference baseline: full-context and streaming decoding on the fixtures, with timings and memory.
 
-    CUDA_VISIBLE_DEVICES=3 uv run scripts/smoke_inference.py --out docs/baseline/online.json
-    CUDA_VISIBLE_DEVICES=3 HF_HOME=$(mktemp -d) uv run scripts/smoke_inference.py --no-network \
+    CUDA_VISIBLE_DEVICES=<gpu> uv run --extra cu126 scripts/smoke_inference.py --out /tmp/online.json
+    CUDA_VISIBLE_DEVICES=<gpu> HF_HOME=$(mktemp -d) uv run --extra cu126 --offline scripts/smoke_inference.py --no-network \
         --out docs/baseline/offline.json
 
 Loads only staged assets (app/quan_loader.py) after verifying them against assets/manifest.json. Decoding is greedy

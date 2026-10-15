@@ -1,4 +1,4 @@
-"""M4 P0 spike: measure what CTC-path timestamps can be trusted for (docs/m4-design.vi.md §6 P0).
+"""M4 P0 spike: measure what CTC-path timestamps can be trusted for (docs/baseline/alignment_probe.json).
 
     CUDA_VISIBLE_DEVICES=<free gpu> uv run scripts/probe_alignment.py --out docs/baseline/alignment_probe.json
 

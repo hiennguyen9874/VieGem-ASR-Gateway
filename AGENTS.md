@@ -1,14 +1,15 @@
 # Deploy QUAN-Transcribe-1.0
 
-- Design: docs/deployment-design.vi.md
-- Plan: docs/implementation-plan.vi.md (M3 REST/SSE + container GPU gate done: cu128 on RTX 5090; cu126 baseline retained for compatible GPUs;
-  evidence/profiles: docs/container-gate.vi.md; CPU container diagnostics are not the GPU release gate;
-  M4 R2a verbose_json/srt/vtt done; R2b word timestamps blocked on a hand-annotated set;
-  M5 R3a realtime explicit commit done, CPU + GPU gate passed)
-- M3 design + deviations: docs/m3-design.vi.md; container results: docs/container-gate.vi.md
-- M5 design + results: docs/m5-design.vi.md (§9)
-- M7 tooling + CPU hardening: docs/m7-capacity.vi.md (production GPU capacity/limits gate still open; no exclusive GPU)
-- Baseline (M0 results, pins, measurements): docs/baseline.vi.md
+Pre-release `v0.1.0-rc.1`: R1 REST/SSE, R2a verbose_json/srt/vtt, R3a realtime explicit commit. Deploy is Docker only
+(README). No reverse-proxy config is shipped: TLS is the operator's infrastructure.
+
+- Usage + Docker deploy: README.md
+- Architecture: docs/deployment-design.vi.md
+- Status (done milestones, evidence, deviations): docs/implementation-plan.vi.md
+- Not implemented yet (R2b word timestamps gate, R3b VAD, R4 capacity, scale): docs/roadmap.md
+- Image gate (cu128 passed on RTX 5090; cu126 GPU gate still open; CPU diagnostics are not the gate):
+  docs/container-gate.vi.md
+- Baseline (pins, measurements, frontend limits, reports in docs/baseline/): docs/baseline.vi.md
 - API contract (pinned OpenAI SDK profile, payloads, error codes): docs/api-contract.vi.md
 
 ## Project structure
@@ -38,12 +39,11 @@ scripts/stage_models.py    # download pinned assets into ./models (or $QUAN_MODE
 scripts/fetch_fixtures.py  # build fixtures from FLEURS vi_vn (CC BY 4.0) at a pinned revision, verify SHA256
 scripts/smoke_inference.py # inference baseline: full/streaming, timings, RAM/VRAM, short-clip probe -> JSON
 scripts/smoke_server.py    # stdlib smoke of a running gateway (local/container) vs the offline baseline -> JSON
-scripts/benchmark.py       # M7 closed-loop REST/SSE/WS/mixed ramp + bounded soak; metadata-only JSON, no capacity claim
-deploy/nginx.conf.example  # TLS/SSE/WS proxy template; validate/test in target deployment before release
+scripts/benchmark.py       # R4 closed-loop REST/SSE/WS/mixed ramp + bounded soak; metadata-only JSON, no capacity claim
 scripts/probe_alignment.py # M4 P0: frame geometry, shift, spike latency, invariant, unk -> docs/baseline/alignment_probe.json
 scripts/eval_alignment.py  # M4 P4 (R2b gate): words vs hand annotations in tests/fixtures/alignment/ (none yet)
-Dockerfile, .dockerignore, compose.yaml  # R1 image (pinned digests, non-root, models mounted ro, no secrets)
-docs/baseline/*.json       # saved reports (online / offline / server smoke, alignment_probe)
+Dockerfile, .dockerignore, compose.yaml  # image (pinned digests, non-root, only app/ + venv, models mounted ro, no secrets)
+docs/baseline/*.json       # saved reports (offline baseline, server smoke, container gate, alignment_probe)
 tests/
   unit/                    # CPU: manifests and pins, config, app over real Uvicorn with a fake engine;
                            #      transcription params/joiner and end-to-end API (FFmpeg, disconnect, SSE, drain,
@@ -74,7 +74,6 @@ uv sync --extra cu126                            # baseline: Python 3.12, torch 
 uv sync --extra cu128                            # Blackwell: torch 2.11.0+cu128; then use --extra cu128 on every uv run
 uv run --extra cu126 scripts/stage_models.py                   # stage pinned models (--verify: offline hash check only)
 uv run --extra cu126 scripts/fetch_fixtures.py                 # build fixtures (--verify [--small-only]: hash check only)
-CUDA_VISIBLE_DEVICES=<free gpu> uv run --extra cu126 scripts/smoke_inference.py --out docs/baseline/online.json
 CUDA_VISIBLE_DEVICES=<free gpu> HF_HOME=$(mktemp -d) uv run --extra cu126 --offline scripts/smoke_inference.py \
     --no-network --out docs/baseline/offline.json
 uv run --extra cu126 pytest                                    # unit + scheduler + contract; GPU tests skip without CUDA/assets
@@ -116,7 +115,7 @@ CUDA_VISIBLE_DEVICES=<free gpu> uv run --extra cu126 scripts/probe_alignment.py 
   pending audio counts against `AudioIngress.reserve`. The JS realtime SDK only uses `wss:` (tests use a self-signed
   cert via `serve(tls_dir=...)`).
 - Timestamps come only from the greedy CTC path via `app/alignment.py`; on mismatch fail with `alignment_failed`,
-  never spread times evenly. Word timestamps stay off (`WORD_TIMESTAMPS = False`) until the m4-design §7 gate passes.
+  never spread times evenly. Word timestamps stay off (`WORD_TIMESTAMPS = False`) until the R2b gate (docs/roadmap.md) passes.
 - Never commit or log HF_TOKEN, API keys, audio or transcripts.
 
 ## References

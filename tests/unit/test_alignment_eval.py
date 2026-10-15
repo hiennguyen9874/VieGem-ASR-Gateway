@@ -1,4 +1,4 @@
-"""Scoring of the R2b word-timestamp gate (scripts/eval_alignment.py, docs/m4-design.vi.md §7), CPU only.
+"""Scoring of the R2b word-timestamp gate (scripts/eval_alignment.py, docs/roadmap.md), CPU only.
 
 Failure modes: ASR errors counted as timing errors (or timing computed on mismatched words), a systematic offset or
 a few outliers passing, too little data passing, invalid or non-monotonic spans passing.

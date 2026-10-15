@@ -1,9 +1,9 @@
 # API contract — QUAN-Transcribe gateway (profile OpenAI đã pin)
 
-Thiết kế: [deployment-design.vi.md](deployment-design.vi.md). Baseline: [baseline.vi.md](baseline.vi.md).
+Kiến trúc: [deployment-design.vi.md](deployment-design.vi.md). Cách chạy: [README](../README.md). Chưa hỗ trợ: [roadmap.md](roadmap.md).
 
-Tài liệu này chốt payload cho R1 (REST/SSE), R2a (`verbose_json`/`srt`/`vtt`, [m4-design.vi.md](m4-design.vi.md)) và
-R3a (Realtime explicit commit). Mọi ví dụ nằm trong
+Tài liệu này chốt payload đang phục vụ: R1 (REST/SSE), R2a (`verbose_json`/`srt`/`vtt`) và R3a (Realtime explicit
+commit). Mọi ví dụ nằm trong
 `tests/contract/examples/` và được **parse bằng SDK thật** (`tests/contract/test_python_sdk.py`,
 `tests/contract/js/contract.test.ts`). Nếu tài liệu và ví dụ khác nhau thì ví dụ + test là chuẩn.
 
@@ -27,7 +27,7 @@ tài liệu OpenAI, không phải traffic quan sát được. Mã lỗi `code` b
 | `stream=true` (SSE delta/done) | Hỗ trợ | R1 |
 | `response_format=verbose_json\|srt\|vtt` (không stream) | Hỗ trợ | R2a |
 | `timestamp_granularities[]=segment` | 400 `unsupported_parameter`: `TranscriptionSegment` cần field chỉ Whisper có; segment chỉ có qua `srt`/`vtt` | — |
-| `timestamp_granularities[]=word` | 400 `unsupported_parameter` cho tới khi qua alignment gate (m4-design §7) | R2b |
+| `timestamp_granularities[]=word` | 400 `unsupported_parameter` cho tới khi qua alignment gate ([roadmap](roadmap.md)) | R2b |
 | WS `/v1/realtime` transcription, `turn_detection: null`, append/commit/clear | Hỗ trợ | R3a |
 | `server_vad` | 400 `unsupported_turn_detection` | R3b |
 | `semantic_vad`, `noise_reduction`, `audio/pcmu`, `audio/pcma` | Từ chối | — |
@@ -86,7 +86,7 @@ Kết quả:
 - Timestamps (`srt`/`vtt`, sau này `words`): lấy từ đường CTC greedy của chính lần inference sinh ra text, cộng offset
   tuyệt đối của chunk; không chạy thêm GPU. **Từ** = dãy ký tự không phải khoảng trắng của transcript (âm tiết tiếng
   Việt, không phải từ ghép); thời gian của từ = các frame 40 ms mà model phát unit của nó (spike, thường 1 frame,
-  nằm trong/cuối âm tiết), nên start của cue có thể trễ ~1 âm tiết so với lúc bắt đầu nói (đo: m4-design §2.1).
+  nằm trong/cuối âm tiết), nên start của cue có thể trễ ~1 âm tiết so với lúc bắt đầu nói (đo: `docs/baseline/alignment_probe.json`).
   Cue mới khi khoảng lặng giữa hai từ ≥ 0.5 s, hoặc khi thêm từ sẽ làm cue dài > 7 s hay > 80 ký tự.
   Ngoại lệ: một từ tự nó vượt giới hạn được giữ nguyên trong cue riêng, không cắt từ. Giờ SRT/VTT là
   ms nguyên làm tròn; cue có thứ tự, không chồng nhau, nằm trong `[0, duration]`. Một từ bị điểm cắt chunk chia đôi
@@ -96,7 +96,7 @@ Kết quả:
   thời gian); `json`/`text`/`verbose_json`/SSE không chạy alignment nên không bị ảnh hưởng.
 - Text: chữ thường tiếng Việt, không dấu câu, số viết bằng chữ (output nguyên bản của model). Nhiều chunk nối bằng
   một dấu cách; chunk rỗng không sinh dấu cách.
-- Silence/clip ngắn (chốt ở M2, `app/chunking.py`): audio decode hợp lệ nhưng ≤ 1,600 mẫu ở 16 kHz (≤ 100 ms), kể
+- Silence/clip ngắn (`app/chunking.py`): audio decode hợp lệ nhưng ≤ 1,600 mẫu ở 16 kHz (≤ 100 ms), kể
   cả 0 mẫu → `text: ""` (`verbose_json` với `duration` thật, `srt` rỗng, `vtt` chỉ header), không gọi model (frontend crash dưới 161 mẫu; xem baseline §7). Silence dài vẫn qua model
   và cho `""` (đã đo), không dùng ngưỡng biên độ.
 - Chunking: audio dài hơn `QUAN_MAX_CHUNK_SECONDS` (mặc định 30 s) được cắt tại điểm yên lặng nhất trong 5 s cuối
@@ -118,7 +118,7 @@ Kết quả:
 - Headers: `200`, `Content-Type: text/event-stream; charset=utf-8`, `Cache-Control: no-cache`,
   `X-Accel-Buffering: no`, không có `Content-Length` (chunked). JSON trong event là compact UTF-8 (không escape
   `\uXXXX`). Không có heartbeat: reverse proxy phải tắt buffering và có read timeout ≥
-  `QUAN_REQUEST_TIMEOUT_SECONDS` (README).
+  `QUAN_REQUEST_TIMEOUT_SECONDS` (README §2).
 - Mỗi event là một dòng `data: <json>` + dòng trống; **không** có trường `event:` và **không** gửi `[DONE]`
   (cả hai SDK coi `[DONE]` là tùy chọn; stream kết thúc bằng đóng kết nối sau `done`).
 - `{"type": "transcript.text.delta", "delta": "..."}`: một event cho mỗi chunk đã decode xong với text khác rỗng,
@@ -148,8 +148,8 @@ cả `call_id`) → 400 `unsupported_parameter`; tham số lặp → 400 `invali
 báo lỗi handshake (Python: `websockets.exceptions.InvalidStatus` với `response.status_code`; JS: event `error`
 "Unexpected server response: <status>"). Không hỗ trợ subprotocol `openai-insecure-api-key.*`.
 
-JS SDK luôn kết nối bằng `wss:` (kể cả `buildRealtimeURL` tùy chỉnh): client JS cần TLS (reverse proxy hoặc Uvicorn
-`--ssl-*`). Một message client tối đa 2 MiB (Uvicorn `--ws-max-size 2097152`, ≈ 32 s audio mỗi append); lớn hơn →
+JS SDK luôn kết nối bằng `wss:` (kể cả `buildRealtimeURL` tùy chỉnh): client JS cần TLS do hạ tầng phía trước gateway
+cung cấp. Một message client tối đa 2 MiB (Uvicorn `--ws-max-size 2097152`, ≈ 32 s audio mỗi append); lớn hơn →
 server đóng socket với code 1009. Message dạng binary → `error` `invalid_event`.
 
 Session sau khi accept (server gửi `session.created` ngay):
@@ -247,13 +247,13 @@ cần restart process), `GET /ready` (readiness, không cần auth; 200 `{"statu
 
 Không bao giờ trả FastAPI 422 `{"detail": …}`. Message không chứa transcript, audio, token hay đường dẫn nội bộ.
 SDK ánh xạ status → class (`BadRequestError`, `AuthenticationError`, `NotFoundError`, …) và đọc `code`/`param`/`type`
-từ envelope. `examples/service_errors.json` được kiểm thử bằng cả Python và JS SDK cho các status/code M1,
-`Retry-After` và request ID (M2 thêm `invalid_audio`, `audio_too_long`, 413 cho form field). API key phải có ít nhất 16 ký tự ASCII printable, không có khoảng trắng.
+từ envelope. `examples/service_errors.json` được kiểm thử bằng cả Python và JS SDK cho các status/code dịch vụ,
+`Retry-After` và request ID (gồm `invalid_audio`, `audio_too_long`, 413 cho form field). API key phải có ít nhất 16 ký tự ASCII printable, không có khoảng trắng.
 
 ## 8. Kiểm tra contract
 
 ```bash
-uv run pytest tests/contract tests/unit
+uv run --extra cu126 pytest tests/contract tests/unit
 (cd tests/contract/js && npm ci && npm test)
 ```
 
@@ -264,5 +264,5 @@ cùng `QUAN_TEST_WSS_BASE_URL` + `QUAN_TEST_CA` (gateway TLS cert tự ký cho `
 qua các test đó.
 
 Khi đổi version SDK: cập nhật pin trong `pyproject.toml`/`tests/contract/js/package.json`, chạy lại cả hai, ghi lại
-thay đổi schema ở tài liệu này. Khi gateway được triển khai (M3/M5), test tích hợp phải gọi server thật và so sánh
-payload với các ví dụ ở đây.
+thay đổi schema ở tài liệu này. Mọi thay đổi contract: cập nhật `tests/contract/examples/`, cả hai SDK test, rồi tài
+liệu này. Bỏ field optional thay vì gửi `null`.

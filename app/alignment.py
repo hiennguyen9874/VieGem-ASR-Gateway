@@ -1,4 +1,4 @@
-"""Word and cue timestamps from the greedy CTC path of each chunk (docs/m4-design.vi.md §4.3, A3–A6).
+"""Word and cue timestamps from the greedy CTC path of each chunk (docs/api-contract.vi.md §4).
 
 The gateway decodes greedily, so the argmax path that produced the text is its alignment: no extra GPU work, no
 forced alignment. Times are absolute 16 kHz sample offsets (ints) until serialization.
@@ -22,7 +22,7 @@ from app.engine import ChunkResult
 SAMPLES_PER_FRAME = 640  # two stride-2 convolutions over 10 ms mel frames
 HALF_FRAME = SAMPLES_PER_FRAME // 2
 # Constant spike delay compensation in samples. 0: the P0 probe found no constant delay to compensate
-# (docs/m4-design.vi.md §2.1, docs/baseline/alignment_probe.json).
+# (docs/baseline/alignment_probe.json).
 EMISSION_SHIFT = 0
 WORD_START = "\u2581"
 

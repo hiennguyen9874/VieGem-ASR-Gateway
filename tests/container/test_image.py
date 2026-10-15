@@ -53,9 +53,9 @@ def test_runs_as_non_root(image):
 
 
 def test_image_contains_only_the_app(image, container_cuda):
-    listing = run_in_image(image, "ls -A /srv; ls -A /srv/assets").split()
-    assert sorted(listing) == sorted([".venv", "app", "assets", "manifest.json"])
-    for path in ("/srv/references", "/srv/models", "/srv/tests", "/srv/.git", "/srv/fixtures-large", "/models"):
+    listing = run_in_image(image, "ls -A /srv").split()
+    assert sorted(listing) == [".venv", "app"]
+    for path in ("/srv/assets", "/srv/references", "/srv/models", "/srv/tests", "/srv/.git", "/srv/fixtures-large", "/models"):
         assert run_in_image(image, f"test -e {path} && echo present || echo absent").strip() == "absent", path
     versions = run_in_image(image, "python --version; ffmpeg -version | head -1")
     assert "Python 3.12.14" in versions and "ffmpeg version 6.1.1" in versions

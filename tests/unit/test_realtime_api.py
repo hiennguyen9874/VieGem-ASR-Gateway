@@ -1,4 +1,4 @@
-"""Realtime WebSocket end to end (docs/m5-design.vi.md P2, §5): real Uvicorn (`websockets-sansio`), fake engine,
+"""Realtime WebSocket end to end (docs/api-contract.vi.md §6): real Uvicorn (`websockets-sansio`), fake engine,
 raw `websockets` client (it can send what the SDKs never do: binary frames, bad JSON, half samples)."""
 
 import base64

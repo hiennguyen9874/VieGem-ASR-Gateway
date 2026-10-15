@@ -1,4 +1,4 @@
-"""OpenAI-compatible models and transcription endpoints (docs/api-contract.vi.md §3–5, docs/m4-design.vi.md).
+"""OpenAI-compatible models and transcription endpoints (docs/api-contract.vi.md §3–5).
 
 POST /v1/audio/transcriptions, one scheduler lane per request:
   pre-check (draining / not ready) -> receive multipart (spool) -> parse_params -> open lane -> decode -> drop spool
@@ -51,7 +51,7 @@ RESPONSE_FORMATS = ("json", "text", "verbose_json", "srt", "vtt")
 STREAM_FORMATS = ("json", "text")
 GRANULARITIES = ("word", "segment")
 # Release switch for word timestamps (R2b), flipped only in a commit that carries the alignment gate report
-# (docs/m4-design.vi.md §7). Not operator config.
+# (docs/roadmap.md, R2b). Not operator config.
 WORD_TIMESTAMPS = False
 MAX_PARAM_CHARS = 64
 

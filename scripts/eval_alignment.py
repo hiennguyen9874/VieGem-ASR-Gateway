@@ -1,4 +1,4 @@
-"""M4 P4: evaluate word timestamps against hand-annotated boundaries (docs/m4-design.vi.md §7, the R2b gate).
+"""M4 P4: evaluate word timestamps against hand-annotated boundaries (the R2b gate, docs/roadmap.md).
 
     CUDA_VISIBLE_DEVICES=<free gpu> uv run scripts/eval_alignment.py --out docs/baseline/alignment_eval.json
 
@@ -111,7 +111,7 @@ def main() -> int:
 
     files = sorted(args.annotations.glob("*.json")) if args.annotations.is_dir() else []
     if not files:
-        print(f"no annotations in {args.annotations} (docs/m4-design.vi.md §7)", file=sys.stderr)
+        print(f"no annotations in {args.annotations} (docs/roadmap.md, R2b)", file=sys.stderr)
         return 1
 
     import soundfile as sf

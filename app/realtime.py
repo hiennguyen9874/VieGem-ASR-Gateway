@@ -1,5 +1,4 @@
-"""Realtime transcription over WebSocket `/v1/realtime`, explicit commit (R3a; docs/m5-design.vi.md,
-docs/api-contract.vi.md §6).
+"""Realtime transcription over WebSocket `/v1/realtime`, explicit commit (R3a; docs/api-contract.vi.md §6).
 
 One session = one accepted WebSocket = one `LIVE` scheduler lane held for the whole session:
   handshake (auth in GatewayMiddleware; query, readiness and capacity here; every refusal is an HTTP response
@@ -70,7 +69,7 @@ QUERY_PARAMS = ("model", "intent")
 # -- turn buffer --------------------------------------------------------------------------------------------------
 
 def samples_bound(samples_in: int) -> int:
-    """Upper bound of the 16 kHz samples `samples_in` input samples become (reserved per append, m5-design B11)."""
+    """Upper bound of the 16 kHz samples `samples_in` input samples become (reserved per append)."""
     return -(-samples_in * SAMPLE_RATE // PCM_RATE)
 
 

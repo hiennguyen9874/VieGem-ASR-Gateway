@@ -460,7 +460,7 @@ async def test_blocked_warmup_marks_worker_unhealthy(recovery):
 
 @run_async
 async def test_release_audio_when_idle_runs_every_callback_once_after_running_job():
-    """A realtime session registers several reservations (items, pending turn) on one lane (m5-design B11)."""
+    """A realtime session registers several reservations (items, pending turn) on one lane."""
     engine = FakeEngine()
     engine.gate.clear()
     async with serving(engine) as (scheduler, _, _):

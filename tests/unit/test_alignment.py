@@ -1,4 +1,4 @@
-"""Timestamps from the greedy CTC path (app/alignment.py, docs/m4-design.vi.md §4.3, A4–A6), CPU only.
+"""Timestamps from the greedy CTC path (app/alignment.py, docs/api-contract.vi.md §4), CPU only.
 
 Failure modes covered: path extraction differs from the package's `greedy_decode` (repeats, blanks, edges); units
 without text (<unk>, a lone "▁") create empty words or shift char ranges; a word gets another word's frames; frames are

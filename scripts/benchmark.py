@@ -1,7 +1,7 @@
 """Bounded, closed-loop capacity probe of a running gateway; never records text/audio/keys.
 
 OPENAI_API_KEY=... uv run --extra cu128 scripts/benchmark.py --out report.json
-See docs/m7-capacity.vi.md for timing definitions, limitations and the release gate.
+Capacity gate and how to run it: docs/roadmap.md (R4). A report is not a capacity claim.
 """
 
 import argparse

@@ -2,7 +2,6 @@
 # .venv, .git, .env or secrets/.
 *
 !app/
-!assets/manifest.json
 !pyproject.toml
 !uv.lock
 **/__pycache__

@@ -35,7 +35,6 @@ RUN apt-get update \
 COPY --from=builder /opt/python /opt/python
 COPY --from=builder /srv/.venv /srv/.venv
 COPY app/ /srv/app/
-COPY assets/manifest.json /srv/assets/manifest.json
 ENV PATH=/srv/.venv/bin:$PATH PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 \
     QUAN_MODELS_DIR=/models HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 HF_HOME=/tmp/hf HOME=/tmp
 USER 10001:10001
