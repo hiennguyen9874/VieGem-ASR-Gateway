@@ -22,7 +22,7 @@ import torch
 from app.engine import QuanEngine
 from app.realtime import PCM_RATE, TurnBuffer
 from scripts.smoke_inference import wer
-from tests.live_server import SR, WS, serve, wav_file
+from tests.live_server import serve, SR, wav_file, WS
 
 ROOT = Path(__file__).resolve().parents[2]
 MODELS = Path(os.environ.get("QUAN_MODELS_DIR", ROOT / "models"))

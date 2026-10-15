@@ -8,8 +8,8 @@ import secrets
 
 import pytest
 
-from app.realtime import decode_base64
 from app.engine import EngineState
+from app.realtime import decode_base64
 from scripts.benchmark import load_clip, stage
 from scripts.smoke_server import Gateway
 from tests.fake_engine import FakeEngine

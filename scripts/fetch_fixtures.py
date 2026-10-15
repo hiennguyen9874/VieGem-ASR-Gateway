@@ -57,7 +57,11 @@ def write_wav(path: Path, x: np.ndarray) -> None:
 
 
 def build(cache: Path) -> dict:
-    rows = list(csv.reader(fetch("dev.tsv", cache).open(encoding="utf-8"), delimiter="\t", quoting=csv.QUOTE_NONE))
+    rows = list(
+        csv.reader(
+            fetch("dev.tsv", cache).open(encoding="utf-8"), delimiter="\t", quoting=csv.QUOTE_NONE
+        )
+    )
     by_file = {r[1]: r for r in rows}
     clean = sorted((r for r in rows if not any(c.isdigit() for c in r[2])), key=lambda r: r[1])
     long_rows = [r for r in clean if r[1] not in (CLIP_A, CLIP_B)]
@@ -79,7 +83,12 @@ def build(cache: Path) -> dict:
     assert set(audio) == wanted, wanted - set(audio)
 
     def source(*names):
-        return {"dataset": DATASET, "revision": REVISION, "split": "vi_vn/dev", "files": list(names)}
+        return {
+            "dataset": DATASET,
+            "revision": REVISION,
+            "split": "vi_vn/dev",
+            "files": list(names),
+        }
 
     SMALL_DIR.mkdir(parents=True, exist_ok=True)
     LARGE_DIR.mkdir(parents=True, exist_ok=True)
@@ -95,7 +104,9 @@ def build(cache: Path) -> dict:
     # A short cut from the middle of an utterance (speech, not leading silence).
     write_wav(SMALL_DIR / "short_200ms.wav", a[2 * SR : 2 * SR + SR // 5])
     entries["short_200ms.wav"] = {
-        "set": "small", "source": source(CLIP_A) | {"samples": [2 * SR, 2 * SR + SR // 5]}, "reference": None,
+        "set": "small",
+        "source": source(CLIP_A) | {"samples": [2 * SR, 2 * SR + SR // 5]},
+        "reference": None,
     }
 
     gap = np.zeros(int(LONG_GAP_S * SR), np.float32)
@@ -106,7 +117,8 @@ def build(cache: Path) -> dict:
         parts += [x, gap]
     write_wav(LARGE_DIR / "vi_long.wav", np.concatenate(parts[:-1]))
     entries["vi_long.wav"] = {
-        "set": "large", "source": source(*(r[1] for r in picked)) | {"gap_s": LONG_GAP_S},
+        "set": "large",
+        "source": source(*(r[1] for r in picked)) | {"gap_s": LONG_GAP_S},
         "reference": " ".join(r[3] for r in picked),
     }
 
@@ -135,9 +147,13 @@ def verify(manifest: dict, include_large: bool) -> list[str]:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     ap.add_argument("--cache", type=Path, default=Path.home() / ".cache" / "quan-deploy-fixtures")
-    ap.add_argument("--verify", action="store_true", help="only verify existing files (no download)")
+    ap.add_argument(
+        "--verify", action="store_true", help="only verify existing files (no download)"
+    )
     ap.add_argument("--small-only", action="store_true", help="with --verify: skip the large set")
     args = ap.parse_args()
 

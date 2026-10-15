@@ -18,14 +18,24 @@ import openai
 import pytest
 import soundfile as sf
 
-from app.chunking import split
 from app import transcription
 from app.alignment import PAUSE_SAMPLES
+from app.chunking import split
 from app.main import create_app
 from app.transcription import MODEL_ID
-from tests.fake_engine import FakeEngine, config
-from tests.live_server import (AUTH, KEY, SR, expected_deltas, name, noise, parse_cues, serve, wait_for,
-                               wav_file)
+from tests.fake_engine import config, FakeEngine
+from tests.live_server import (
+    AUTH,
+    expected_deltas,
+    KEY,
+    name,
+    noise,
+    parse_cues,
+    serve,
+    SR,
+    wait_for,
+    wav_file,
+)
 
 URL = "/v1/audio/transcriptions"
 

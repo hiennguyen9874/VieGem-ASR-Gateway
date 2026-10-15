@@ -25,10 +25,17 @@ from collections.abc import Callable
 
 import numpy as np
 
-from app.config import SAMPLE_RATE, Config
-from app.engine import ChunkResult, EngineState, EngineWorker, check_waveform
-from app.errors import APIError, inference_failed, model_not_ready, request_timeout, server_busy, shutting_down
-from app.observability import Metrics, log, request_id
+from app.config import Config, SAMPLE_RATE
+from app.engine import check_waveform, ChunkResult, EngineState, EngineWorker
+from app.errors import (
+    APIError,
+    inference_failed,
+    model_not_ready,
+    request_timeout,
+    server_busy,
+    shutting_down,
+)
+from app.observability import log, Metrics, request_id
 
 
 class JobKind(enum.StrEnum):
@@ -104,7 +111,10 @@ class Scheduler:
         self._max_chunk_samples = config.max_chunk_samples
         self._queue_timeout = config.queue_timeout_seconds
         self._live_ratio = config.live_priority_ratio
-        self._rings = {JobKind.LIVE: deque(), JobKind.FILE: deque()}  # lanes with queued jobs, round-robin order
+        self._rings = {
+            JobKind.LIVE: deque(),
+            JobKind.FILE: deque(),
+        }  # lanes with queued jobs, round-robin order
         self._live_streak = 0
         self._lanes = 0
         self._jobs = 0
@@ -113,17 +123,24 @@ class Scheduler:
         self._closed: bool | None = None  # result of close()
         self._waiters: list[asyncio.Future] = []
         self._task: asyncio.Task | None = None
-        metrics.gauge_fn("open_lanes", "Open requests/sessions holding a scheduler lane.", lambda: self._lanes)
+        metrics.gauge_fn(
+            "open_lanes", "Open requests/sessions holding a scheduler lane.", lambda: self._lanes
+        )
         metrics.gauge_fn("queued_jobs", "Unfinished jobs (queued + running).", lambda: self._jobs)
-        metrics.gauge_fn("buffered_audio_seconds", "Audio held by unfinished jobs.",
-                         lambda: self._samples / SAMPLE_RATE)
+        metrics.gauge_fn(
+            "buffered_audio_seconds",
+            "Audio held by unfinished jobs.",
+            lambda: self._samples / SAMPLE_RATE,
+        )
 
     @property
     def closing(self) -> bool:
         return self._closing
 
     def start(self) -> None:
-        self._task = asyncio.get_running_loop().create_task(self._dispatch(), name="quan-dispatcher")
+        self._task = asyncio.get_running_loop().create_task(
+            self._dispatch(), name="quan-dispatcher"
+        )
 
     def open_lane(self, kind: JobKind) -> Lane:
         if self._closing:
@@ -289,8 +306,12 @@ class Scheduler:
                 self._release(job)
                 job.future.set_exception(request_timeout())
                 continue
-            self._metrics.observe("queue_wait_seconds", "Time from submit to start of inference.",
-                                  now - job.enqueued_at, kind=kind.value)
+            self._metrics.observe(
+                "queue_wait_seconds",
+                "Time from submit to start of inference.",
+                now - job.enqueued_at,
+                kind=kind.value,
+            )
             job.state, lane.running = JobState.RUNNING, job
             error: APIError | None = None
 
@@ -329,6 +350,14 @@ class Scheduler:
                 outcome = "ok"
                 job.future.set_result(result)
             self._count(outcome, kind)
-            log(logging.DEBUG, "scheduler.job", request_id=lane.request_id, lane=lane.id, kind=kind.value,
-                outcome=outcome, audio_s=round(job.samples / SAMPLE_RATE, 3),
-                queue_wait_s=round(now - job.enqueued_at, 4), infer_s=round(infer_s, 4))
+            log(
+                logging.DEBUG,
+                "scheduler.job",
+                request_id=lane.request_id,
+                lane=lane.id,
+                kind=kind.value,
+                outcome=outcome,
+                audio_s=round(job.samples / SAMPLE_RATE, 3),
+                queue_wait_s=round(now - job.enqueued_at, 4),
+                infer_s=round(infer_s, 4),
+            )

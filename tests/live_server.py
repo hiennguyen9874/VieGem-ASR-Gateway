@@ -30,8 +30,8 @@ from app.engine import Engine
 from app.main import create_app
 from app.realtime import WS_MAX_BYTES
 from app.transcription import Joiner
-from tests.fake_engine import FakeEngine, config
 from scripts.subtitles import parse_cues as _parse_cues
+from tests.fake_engine import config, FakeEngine
 
 KEY = "test-key-0123456789"
 AUTH = {"Authorization": f"Bearer {KEY}"}

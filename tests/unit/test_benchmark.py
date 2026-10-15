@@ -7,16 +7,23 @@ import ssl
 import subprocess
 import sys
 import urllib.error
-from pathlib import Path
 
 import pytest
 
 from app.observability import Metrics
-from scripts.benchmark import (Client, Clip, histogram, load_clip, metric_delta, parse_metrics,
-                               percentiles, stage)
+from scripts.benchmark import (
+    Client,
+    Clip,
+    histogram,
+    load_clip,
+    metric_delta,
+    parse_metrics,
+    percentiles,
+    stage,
+)
 from scripts.smoke_server import Gateway
-from tests.live_server import KEY, noise, serve, wav_file
 from tests.fake_engine import FakeEngine
+from tests.live_server import KEY, noise, serve, wav_file
 
 
 def test_statistics_and_histogram_interval_not_lifetime():

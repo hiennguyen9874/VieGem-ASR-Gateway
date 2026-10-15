@@ -16,7 +16,7 @@ from app.engine import EngineState, EngineWorker
 from app.errors import APIError
 from app.observability import Metrics
 from app.scheduler import JobKind, Scheduler
-from tests.fake_engine import FakeEngine, config, wav
+from tests.fake_engine import config, FakeEngine, wav
 
 FILE, LIVE = JobKind.FILE, JobKind.LIVE
 

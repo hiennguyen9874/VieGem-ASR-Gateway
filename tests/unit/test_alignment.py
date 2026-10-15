@@ -13,12 +13,21 @@ import pytest
 import torch
 from quan_transcribe.model import greedy_decode
 
-from app.alignment import (MAX_CUE_CHARS, MAX_CUE_SAMPLES, PAUSE_SAMPLES, AlignmentError, Segment, Word, align,
-                           segments, words)
+from app.alignment import (
+    align,
+    AlignmentError,
+    MAX_CUE_CHARS,
+    MAX_CUE_SAMPLES,
+    PAUSE_SAMPLES,
+    Segment,
+    segments,
+    Word,
+    words,
+)
 from app.chunking import Span
 from app.engine import ChunkResult, ctc_path
 from app.transcription import Joiner
-from tests.fake_engine import PIECES, fake_result
+from tests.fake_engine import fake_result, PIECES
 
 # unit ids: 0 blank, 1 unk
 P = ("", "", "\u2581các", "\u2581sản", "\u2581ph", "ẩm", "\u2581", "a", "\u2581a", "\u2581b")

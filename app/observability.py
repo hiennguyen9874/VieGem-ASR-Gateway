@@ -76,16 +76,29 @@ class Metrics:
         CHILDREN includes reaped subprocesses (FFmpeg here); it is not per-request CPU
         and excludes running children until they exit. Compare snapshots on an idle replica.
         """
+
         def cpu(who: int) -> float:
             usage = resource.getrusage(who)
             return usage.ru_utime + usage.ru_stime
 
-        self.gauge_fn("process_cpu_seconds_total", "Cumulative gateway process CPU seconds.",
-                      lambda: cpu(resource.RUSAGE_SELF))
-        self.gauge_fn("children_cpu_seconds_total", "Cumulative CPU seconds of reaped children (FFmpeg).",
-                      lambda: cpu(resource.RUSAGE_CHILDREN))
-        self.gauge_fn("process_max_rss_bytes", "Lifetime process RSS high-water mark, not a stage-local peak.",
-                      lambda: resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * (1 if sys.platform == "darwin" else 1024))
+        self.gauge_fn(
+            "process_cpu_seconds_total",
+            "Cumulative gateway process CPU seconds.",
+            lambda: cpu(resource.RUSAGE_SELF),
+        )
+        self.gauge_fn(
+            "children_cpu_seconds_total",
+            "Cumulative CPU seconds of reaped children (FFmpeg).",
+            lambda: cpu(resource.RUSAGE_CHILDREN),
+        )
+        self.gauge_fn(
+            "process_max_rss_bytes",
+            "Lifetime process RSS high-water mark, not a stage-local peak.",
+            lambda: (
+                resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+                * (1 if sys.platform == "darwin" else 1024)
+            ),
+        )
 
     def _declare(self, name: str, type_: str, help_: str) -> None:
         if self._help.setdefault(name, (type_, help_))[0] != type_:
@@ -140,9 +153,11 @@ class Metrics:
                     out.append(f"{full}{_labels(key)} {v}")
                 for key, h in sorted(self._hists.get(name, {}).items()):
                     cumulative = 0
-                    for bound, n in zip(DEFAULT_BUCKETS, h.buckets):
+                    for bound, n in zip(DEFAULT_BUCKETS, h.buckets, strict=True):
                         cumulative += n
-                        out.append(f"{full}_bucket{_labels(key + (('le', str(bound)),))} {cumulative}")
+                        out.append(
+                            f"{full}_bucket{_labels(key + (('le', str(bound)),))} {cumulative}"
+                        )
                     out.append(f"{full}_bucket{_labels(key + (('le', '+Inf'),))} {h.count}")
                     out.append(f"{full}_sum{_labels(key)} {h.total}")
                     out.append(f"{full}_count{_labels(key)} {h.count}")

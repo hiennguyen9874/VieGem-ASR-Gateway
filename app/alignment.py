@@ -13,6 +13,7 @@ forced alignment. Times are absolute 16 kHz sample offsets (ints) until serializ
 
 import re
 from collections.abc import Sequence
+from itertools import pairwise
 from typing import NamedTuple
 
 from app.chunking import Span
@@ -59,17 +60,17 @@ def words(span: Span, result: ChunkResult, pieces: Sequence[str]) -> list[Word]:
     chars: list[str] = []
     ranges: list[tuple[int, int, int, int]] = []  # (char start, char end, first frame, last frame)
     pos, prev_first, prev_last = 0, 0, 0
-    for u, f, l in zip(result.units, result.first, result.last):
+    for u, f, last in zip(result.units, result.first, result.last, strict=True):
         # Real paths are strictly increasing; non-decreasing is all the times below need.
-        if not (prev_first <= f <= l < result.frames and prev_last <= l):
+        if not (prev_first <= f <= last < result.frames and prev_last <= last):
             raise AlignmentError("frames out of order or out of range")
-        prev_first, prev_last = f, l
+        prev_first, prev_last = f, last
         if not 0 <= u < len(pieces):
             raise AlignmentError("unit outside the vocabulary")
         piece = pieces[u].replace(WORD_START, " ")
         if piece:
             chars.append(piece)
-            ranges.append((pos, pos + len(piece), f, l))
+            ranges.append((pos, pos + len(piece), f, last))
             pos += len(piece)
     spelled = "".join(chars)
     if spelled.strip() != result.text:
@@ -104,7 +105,7 @@ def align(chunks: Sequence[tuple[Span, ChunkResult]], pieces: Sequence[str]) -> 
             raise AlignmentError("chunks overlap or are out of order")
         prev_end = span.end
         out.extend(words(span, result, pieces))
-    if any(b.start < a.start for a, b in zip(out, out[1:])):
+    if any(b.start < a.start for a, b in pairwise(out)):
         raise AlignmentError("word starts go backwards")
     return out
 
@@ -115,8 +116,11 @@ def segments(ws: Sequence[Word]) -> list[Segment]:
     out: list[Segment] = []
     cue: list[Word] = []
     for w in ws:
-        if cue and (w.start - cue[-1].end >= PAUSE_SAMPLES or w.end - cue[0].start > MAX_CUE_SAMPLES
-                    or sum(len(x.text) + 1 for x in cue) + len(w.text) > MAX_CUE_CHARS):
+        if cue and (
+            w.start - cue[-1].end >= PAUSE_SAMPLES
+            or w.end - cue[0].start > MAX_CUE_SAMPLES
+            or sum(len(x.text) + 1 for x in cue) + len(w.text) > MAX_CUE_CHARS
+        ):
             out.append(_cue(cue))
             cue = []
         cue.append(w)

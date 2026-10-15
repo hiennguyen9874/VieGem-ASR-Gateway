@@ -35,11 +35,15 @@ class Config:
     max_upload_bytes: int = 25 * 1024 * 1024  # whole request body, checked before multipart parsing
     max_spool_bytes: int = 200 * 1024 * 1024  # temp disk held by all uploads in flight
     spool_dir: Path = Path(tempfile.gettempdir())  # a private 0700 subdirectory is created inside
-    max_audio_seconds: float = 1800.0  # decoded duration; FFmpeg is stopped as soon as it is exceeded
+    max_audio_seconds: float = (
+        1800.0  # decoded duration; FFmpeg is stopped as soon as it is exceeded
+    )
     max_chunk_seconds: float = 30.0
     decode_timeout_seconds: float = 60.0
     max_concurrent_decodes: int = 2
-    max_decoded_seconds: float = 3600.0  # decoded audio held in RAM by all requests in flight (429 above)
+    max_decoded_seconds: float = (
+        3600.0  # decoded audio held in RAM by all requests in flight (429 above)
+    )
 
     # Scheduler. A lane is one REST request or one realtime session.
     queue_max_lanes: int = 32
@@ -57,7 +61,9 @@ class Config:
     max_turn_seconds: float = 120.0
     max_pending_items: int = 4
     session_idle_timeout_seconds: float = 120.0
-    send_timeout_seconds: float = 10.0  # one SSE/WebSocket send; a slower client counts as disconnected
+    send_timeout_seconds: float = (
+        10.0  # one SSE/WebSocket send; a slower client counts as disconnected
+    )
 
     shutdown_drain_seconds: float = 30.0
 
@@ -77,18 +83,24 @@ class Config:
         if not self.api_keys:
             raise ConfigError("QUAN_API_KEYS (or QUAN_API_KEYS_FILE) must define at least one key")
         for key in self.api_keys:
-            if len(key) < MIN_API_KEY_LENGTH or not all('!' <= c <= '~' for c in key):
-                raise ConfigError(f"API keys must be >= {MIN_API_KEY_LENGTH} printable ASCII characters without spaces")
+            if len(key) < MIN_API_KEY_LENGTH or not all("!" <= c <= "~" for c in key):
+                raise ConfigError(
+                    f"API keys must be >= {MIN_API_KEY_LENGTH} printable ASCII characters without spaces"
+                )
         if len(set(self.api_keys)) != len(self.api_keys):
             raise ConfigError("duplicate API key")
         if self.log_level not in ("DEBUG", "INFO", "WARNING", "ERROR"):
-            raise ConfigError(f"QUAN_LOG_LEVEL must be DEBUG, INFO, WARNING or ERROR, got {self.log_level!r}")
+            raise ConfigError(
+                f"QUAN_LOG_LEVEL must be DEBUG, INFO, WARNING or ERROR, got {self.log_level!r}"
+            )
         if not self.device:
             raise ConfigError("QUAN_DEVICE must not be empty")
         for f in dataclasses.fields(self):
             value = getattr(self, f.name)
             if f.type in (int, float) and not (math.isfinite(value) and value > 0):
-                raise ConfigError(f"{PREFIX}{f.name.upper()} must be a finite number > 0, got {value!r}")
+                raise ConfigError(
+                    f"{PREFIX}{f.name.upper()} must be a finite number > 0, got {value!r}"
+                )
         if self.max_chunk_seconds > self.max_audio_seconds:
             raise ConfigError("QUAN_MAX_CHUNK_SECONDS must be <= QUAN_MAX_AUDIO_SECONDS")
         if self.max_chunk_seconds < MIN_CHUNK_SECONDS:
@@ -101,7 +113,9 @@ class Config:
         # A single job must fit the queue budget, otherwise it could never be admitted.
         for name in ("max_chunk_seconds", "max_turn_seconds"):
             if getattr(self, name) > self.queue_max_buffered_seconds:
-                raise ConfigError(f"{PREFIX}{name.upper()} must be <= QUAN_QUEUE_MAX_BUFFERED_SECONDS")
+                raise ConfigError(
+                    f"{PREFIX}{name.upper()} must be <= QUAN_QUEUE_MAX_BUFFERED_SECONDS"
+                )
         if self.queue_max_jobs_per_lane > self.queue_max_jobs:
             raise ConfigError("QUAN_QUEUE_MAX_JOBS_PER_LANE must be <= QUAN_QUEUE_MAX_JOBS")
         if self.max_sessions > self.queue_max_lanes:
@@ -111,7 +125,10 @@ class Config:
     def from_env(cls, env: Mapping[str, str] | None = None) -> "Config":
         env = os.environ if env is None else env
         fields = {f.name: f for f in dataclasses.fields(cls) if f.name != "api_keys"}
-        known = {PREFIX + name.upper() for name in fields} | {PREFIX + "API_KEYS", PREFIX + "API_KEYS_FILE"}
+        known = {PREFIX + name.upper() for name in fields} | {
+            PREFIX + "API_KEYS",
+            PREFIX + "API_KEYS_FILE",
+        }
         unknown = sorted(k for k in env if k.startswith(PREFIX) and k not in known)
         if unknown:
             raise ConfigError(f"unknown configuration variables: {', '.join(unknown)}")
@@ -133,7 +150,9 @@ def _read_api_keys(env: Mapping[str, str]) -> tuple[str, ...]:
             text = Path(path).read_text()
         except OSError as e:
             raise ConfigError(f"cannot read QUAN_API_KEYS_FILE: {e.strerror}") from None
-        keys = tuple(line.strip() for line in text.splitlines() if line.strip() and not line.startswith("#"))
+        keys = tuple(
+            line.strip() for line in text.splitlines() if line.strip() and not line.startswith("#")
+        )
     else:
         keys = tuple(k.strip() for k in (inline or "").split(",") if k.strip())
     hf_token = env.get("HF_TOKEN")

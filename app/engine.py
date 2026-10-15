@@ -23,7 +23,7 @@ import numpy as np
 
 from app.config import SAMPLE_RATE
 from app.errors import inference_failed, model_not_ready
-from app.observability import Metrics, log
+from app.observability import log, Metrics
 
 # The log-mel frontend crashes below 161 samples (docs/baseline.vi.md §7). Audio policy for short clips (return ""
 # without inference) belongs to the callers; this is the hard safety floor.
@@ -37,6 +37,7 @@ class ChunkResult(NamedTuple):
     `units` is the collapsed path without blanks (<unk> kept, so it matches the path); unit i was emitted on encoder
     frames `first[i]..last[i]` (inclusive, relative to the chunk). `frames` is the number of valid encoder frames.
     """
+
     text: str
     units: tuple[int, ...]
     first: tuple[int, ...]
@@ -52,7 +53,11 @@ def ctc_path(best: np.ndarray) -> tuple[tuple[int, ...], tuple[int, ...], tuple[
     starts = np.flatnonzero(np.concatenate(([True], best[1:] != best[:-1])))
     ends = np.concatenate((starts[1:], [len(best)])) - 1
     keep = best[starts] != BLANK
-    return (tuple(best[starts][keep].tolist()), tuple(starts[keep].tolist()), tuple(ends[keep].tolist()))
+    return (
+        tuple(best[starts][keep].tolist()),
+        tuple(starts[keep].tolist()),
+        tuple(ends[keep].tolist()),
+    )
 
 
 class Engine(Protocol):
@@ -101,7 +106,9 @@ def check_waveform(wav: np.ndarray) -> None:
     if not isinstance(wav, np.ndarray) or wav.dtype != np.float32 or wav.ndim != 1:
         raise ValueError("waveform must be a 1-D float32 numpy array (16 kHz mono)")
     if len(wav) < MIN_FORWARD_SAMPLES:
-        raise ValueError(f"waveform shorter than {MIN_FORWARD_SAMPLES} samples must not reach the model")
+        raise ValueError(
+            f"waveform shorter than {MIN_FORWARD_SAMPLES} samples must not reach the model"
+        )
     if not np.isfinite(wav).all():
         raise ValueError("waveform contains non-finite samples")
 
@@ -122,12 +129,21 @@ class EngineWorker:
         self._state = EngineState.LOADING
         self._call_started: float | None = None
         self.pieces: tuple[str, ...] = ()  # set before the worker becomes ready
-        metrics.gauge_fn("ready", "1 when the model is loaded, warmed up and the worker is not hung.",
-                         lambda: float(self.ready))
-        metrics.gauge_fn("worker_busy", "1 while an inference call is running.",
-                         lambda: float(self._call_started is not None))
-        metrics.gauge_fn("worker_hung", "1 when the running call exceeded QUAN_INFER_HANG_SECONDS.",
-                         lambda: float(self.hung))
+        metrics.gauge_fn(
+            "ready",
+            "1 when the model is loaded, warmed up and the worker is not hung.",
+            lambda: float(self.ready),
+        )
+        metrics.gauge_fn(
+            "worker_busy",
+            "1 while an inference call is running.",
+            lambda: float(self._call_started is not None),
+        )
+        metrics.gauge_fn(
+            "worker_hung",
+            "1 when the running call exceeded QUAN_INFER_HANG_SECONDS.",
+            lambda: float(self.hung),
+        )
 
     @property
     def state(self) -> EngineState:
@@ -179,7 +195,9 @@ class EngineWorker:
             self._warmup()
         except Exception:
             log(logging.ERROR, "engine.load_failed", exc_info=True)
-            self._metrics.inc("worker_failures_total", "Load, inference or recovery failures.", stage="load")
+            self._metrics.inc(
+                "worker_failures_total", "Load, inference or recovery failures.", stage="load"
+            )
             self._set_state(EngineState.FAILED)
         else:
             log(logging.INFO, "engine.loaded", seconds=round(time.monotonic() - t0, 3))
@@ -200,17 +218,25 @@ class EngineWorker:
             except Exception as e:
                 self._call_started = None
                 log(logging.ERROR, "engine.inference_failed", exc_info=True, samples=len(wav))
-                self._metrics.inc("worker_failures_total", "Load, inference or recovery failures.", stage="infer")
+                self._metrics.inc(
+                    "worker_failures_total", "Load, inference or recovery failures.", stage="infer"
+                )
                 err = inference_failed()
-                err.__cause__ = e.with_traceback(None)  # already logged; the traceback can retain audio
+                err.__cause__ = e.with_traceback(
+                    None
+                )  # already logged; the traceback can retain audio
                 fut.set_exception(err)
                 self._recover()
             else:
                 self._call_started = None
-                self._metrics.observe("infer_seconds", "Duration of one inference call.", time.monotonic() - started)
+                self._metrics.observe(
+                    "infer_seconds", "Duration of one inference call.", time.monotonic() - started
+                )
                 fut.set_result(result)
             finally:
-                wav = item = fut = err = None  # idle worker must not pin completed audio or failure tracebacks
+                wav = item = fut = err = (
+                    None  # idle worker must not pin completed audio or failure tracebacks
+                )
         self._set_state(EngineState.STOPPED)
 
     def _warmup(self) -> None:
@@ -227,7 +253,9 @@ class EngineWorker:
             self._warmup()
         except Exception:
             log(logging.ERROR, "engine.recovery_failed", exc_info=True)
-            self._metrics.inc("worker_failures_total", "Load, inference or recovery failures.", stage="recover")
+            self._metrics.inc(
+                "worker_failures_total", "Load, inference or recovery failures.", stage="recover"
+            )
             self._set_state(EngineState.FAILED)
         else:
             self._set_state(EngineState.READY)

@@ -39,7 +39,9 @@ def split(wav: np.ndarray, max_samples: int) -> list[Span]:
     search = int(SEARCH_SECONDS * SAMPLE_RATE)
     spans, start = [], 0
     while n - start > max_samples:
-        hi = min(start + max_samples, n - min_chunk)  # keep the remainder long enough to be transcribed
+        hi = min(
+            start + max_samples, n - min_chunk
+        )  # keep the remainder long enough to be transcribed
         lo = max(start + max_samples - search, start + min_chunk)
         cut = _quietest(wav, lo, hi)
         spans.append(Span(start, cut))

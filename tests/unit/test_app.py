@@ -18,7 +18,7 @@ import uvicorn
 from app.config import ConfigError
 from app.engine import EngineState
 from app.main import create_app
-from tests.fake_engine import FakeEngine, config
+from tests.fake_engine import config, FakeEngine
 
 KEY = "test-key-0123456789"
 AUTH = {"Authorization": f"Bearer {KEY}"}

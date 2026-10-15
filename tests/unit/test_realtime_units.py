@@ -9,8 +9,16 @@ import pytest
 import soxr
 
 from app.errors import APIError
-from app.realtime import (CLIENT_EVENT_TYPES, PCM_RATE, Session, TurnBuffer, parse_event, parse_session_update,
-                          samples_bound, session_object)
+from app.realtime import (
+    CLIENT_EVENT_TYPES,
+    parse_event,
+    parse_session_update,
+    PCM_RATE,
+    samples_bound,
+    Session,
+    session_object,
+    TurnBuffer,
+)
 from app.transcription import MODEL_ID, WHISPER_ALIAS
 
 MODELS = (MODEL_ID,)

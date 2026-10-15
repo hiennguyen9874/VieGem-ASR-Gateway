@@ -19,7 +19,7 @@ import torch
 
 from app.engine import QuanEngine
 from scripts.smoke_inference import wer
-from tests.live_server import SR, parse_cues, serve, wav_file
+from tests.live_server import parse_cues, serve, SR, wav_file
 
 ROOT = Path(__file__).resolve().parents[2]
 MODELS = Path(os.environ.get("QUAN_MODELS_DIR", ROOT / "models"))

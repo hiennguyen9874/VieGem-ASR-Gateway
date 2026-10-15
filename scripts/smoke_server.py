@@ -27,13 +27,14 @@ import time
 import urllib.error
 import urllib.request
 import uuid
+from itertools import pairwise
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from scripts.scoring import wer
-from scripts.subtitles import parse_cues
+from scripts.scoring import wer  # noqa: E402
+from scripts.subtitles import parse_cues  # noqa: E402
 
 FIXTURES = ROOT / "tests/fixtures"
 LONG = ROOT / "fixtures-large/vi_long.wav"
@@ -49,8 +50,14 @@ class Gateway:
         self.base, self.key, self.timeout = base_url.rstrip("/"), api_key, timeout
         self.ssl_context = ssl_context
 
-    def request(self, method: str, path: str, body: bytes | None = None, headers: dict | None = None,
-                auth: bool = True):
+    def request(
+        self,
+        method: str,
+        path: str,
+        body: bytes | None = None,
+        headers: dict | None = None,
+        auth: bool = True,
+    ):
         h = dict(headers or {})
         if auth:
             h["Authorization"] = f"Bearer {self.key}"
@@ -66,10 +73,20 @@ class Gateway:
         body = b""
         for k, v in {"model": MODEL, **fields}.items():
             body += f'--{boundary}\r\nContent-Disposition: form-data; name="{k}"\r\n\r\n{v}\r\n'.encode()
-        body += (f'--{boundary}\r\nContent-Disposition: form-data; name="file"; filename="audio.wav"\r\n'
-                 f"Content-Type: audio/wav\r\n\r\n").encode() + audio + f"\r\n--{boundary}--\r\n".encode()
-        return self.request("POST", "/v1/audio/transcriptions", body,
-                            {"Content-Type": f"multipart/form-data; boundary={boundary}"})
+        body += (
+            (
+                f'--{boundary}\r\nContent-Disposition: form-data; name="file"; filename="audio.wav"\r\n'
+                f"Content-Type: audio/wav\r\n\r\n"
+            ).encode()
+            + audio
+            + f"\r\n--{boundary}--\r\n".encode()
+        )
+        return self.request(
+            "POST",
+            "/v1/audio/transcriptions",
+            body,
+            {"Content-Type": f"multipart/form-data; boundary={boundary}"},
+        )
 
 
 def wait_ready(gw: Gateway, timeout: float) -> float:
@@ -119,14 +136,26 @@ def run_fixture(gw: Gateway, audio: bytes) -> dict:
             timed[fmt] = (r.headers["content-type"], parse_cues(r.read().decode(), fmt))
     t5 = time.monotonic()
     return {
-        "text": body["text"], "usage": body["usage"], "text_body": text, "text_content_type": text_type,
-        "sse_content_type": sse_type, "deltas": len(deltas), "sse_joined": "".join(deltas), "sse_done": done,
-        "sse_errors": errors, "verbose": verbose,
+        "text": body["text"],
+        "usage": body["usage"],
+        "text_body": text,
+        "text_content_type": text_type,
+        "sse_content_type": sse_type,
+        "deltas": len(deltas),
+        "sse_joined": "".join(deltas),
+        "sse_done": done,
+        "sse_errors": errors,
+        "verbose": verbose,
         "cue_content_types": {f: t for f, (t, _) in timed.items()},
         "cues": {f: c for f, (_, c) in timed.items()},
-        "timings_s": {"json": round(t1 - t0, 3), "text": round(t2 - t1, 3), "sse_total": round(t3 - t2, 3),
-                      "sse_first_event": round((first or t3) - t2, 3), "verbose_json": round(t4 - t3, 3),
-                      "srt_vtt": round(t5 - t4, 3)},
+        "timings_s": {
+            "json": round(t1 - t0, 3),
+            "text": round(t2 - t1, 3),
+            "sse_total": round(t3 - t2, 3),
+            "sse_first_event": round((first or t3) - t2, 3),
+            "verbose_json": round(t4 - t3, 3),
+            "srt_vtt": round(t5 - t4, 3),
+        },
     }
 
 
@@ -141,8 +170,13 @@ def run_realtime(gw: Gateway, paths: list[Path]) -> tuple[dict, list[str]]:
 
     url = "ws" + gw.base.removeprefix("http") + f"/v1/realtime?model={MODEL}"
     results, failures = {}, []
-    with connect(url, additional_headers={"Authorization": f"Bearer {gw.key}"}, max_size=None,
-                 open_timeout=30) as ws:
+    with connect(
+        url,
+        additional_headers={"Authorization": f"Bearer {gw.key}"},
+        max_size=None,
+        open_timeout=30,
+    ) as ws:
+
         def recv() -> dict:
             return json.loads(ws.recv(gw.timeout))
 
@@ -155,14 +189,21 @@ def run_realtime(gw: Gateway, paths: list[Path]) -> tuple[dict, list[str]]:
             pcm = np.round(np.clip(up, -1, 32767 / 32768) * 32768).astype("<i2").tobytes()
             t0 = time.monotonic()
             for i in range(0, len(pcm), PCM_RATE // 50 * 2):
-                ws.send(json.dumps({"type": "input_audio_buffer.append",
-                                    "audio": base64.b64encode(pcm[i:i + PCM_RATE // 50 * 2]).decode()}))
+                ws.send(
+                    json.dumps(
+                        {
+                            "type": "input_audio_buffer.append",
+                            "audio": base64.b64encode(pcm[i : i + PCM_RATE // 50 * 2]).decode(),
+                        }
+                    )
+                )
             t1 = time.monotonic()
             ws.send(json.dumps({"type": "input_audio_buffer.commit"}))
             events = [recv()]
             first_delta = None
-            while not events[-1]["type"].startswith("conversation.item.input_audio_transcription.") or events[-1][
-                    "type"].endswith(".delta"):
+            while not events[-1]["type"].startswith(
+                "conversation.item.input_audio_transcription."
+            ) or events[-1]["type"].endswith(".delta"):
                 events.append(recv())
                 if first_delta is None and events[-1]["type"].endswith(".delta"):
                     first_delta = time.monotonic()
@@ -171,40 +212,70 @@ def run_realtime(gw: Gateway, paths: list[Path]) -> tuple[dict, list[str]]:
             deltas = [e["delta"] for e in events if e["type"].endswith(".delta")]
             done = events[-1]
             name = path.name
-            if (types[:2] != ["input_audio_buffer.committed", "conversation.item.added"]
-                    or events[0]["previous_item_id"] != previous or not types[-1].endswith(".completed")):
+            if (
+                types[:2] != ["input_audio_buffer.committed", "conversation.item.added"]
+                or events[0]["previous_item_id"] != previous
+                or not types[-1].endswith(".completed")
+            ):
                 failures.append(f"realtime {name}: events {types[:2]}..{types[-1]}")
                 results[name] = {"events": types}
                 continue
             previous = events[0]["item_id"]
             seconds = len(pcm) / 2 / PCM_RATE
-            if done["transcript"] != "".join(deltas) or done["usage"] != {"type": "duration", "seconds": seconds}:
+            if done["transcript"] != "".join(deltas) or done["usage"] != {
+                "type": "duration",
+                "seconds": seconds,
+            }:
                 failures.append(f"realtime {name}: transcript/usage disagree")
-            results[name] = {"text": done["transcript"], "deltas": len(deltas), "audio_s": seconds,
-                             "timings_s": {"append_send": round(t1 - t0, 3),
-                                           "commit_to_first_delta": round((first_delta or t2) - t1, 3),
-                                           "commit_to_completed": round(t2 - t1, 3)}}
-            print(f"realtime {name}: {results[name]['timings_s']} deltas={len(deltas)}", file=sys.stderr)
+            results[name] = {
+                "text": done["transcript"],
+                "deltas": len(deltas),
+                "audio_s": seconds,
+                "timings_s": {
+                    "append_send": round(t1 - t0, 3),
+                    "commit_to_first_delta": round((first_delta or t2) - t1, 3),
+                    "commit_to_completed": round(t2 - t1, 3),
+                },
+            }
+            print(
+                f"realtime {name}: {results[name]['timings_s']} deltas={len(deltas)}",
+                file=sys.stderr,
+            )
     return results, failures
 
 
 def git_commit() -> str | None:
     try:
-        out = subprocess.run(["git", "rev-parse", "HEAD"], cwd=ROOT, capture_output=True, text=True, check=True)
-        dirty = subprocess.run(["git", "status", "--porcelain", "--untracked-files=no"], cwd=ROOT,
-                               capture_output=True, text=True, check=True).stdout.strip()
+        out = subprocess.run(
+            ["git", "rev-parse", "HEAD"], cwd=ROOT, capture_output=True, text=True, check=True
+        )
+        dirty = subprocess.run(
+            ["git", "status", "--porcelain", "--untracked-files=no"],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
         return out.stdout.strip() + ("-dirty" if dirty else "")
     except (OSError, subprocess.CalledProcessError):
         return None
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     ap.add_argument("--base-url", default="http://127.0.0.1:18000")
-    ap.add_argument("--api-key-env", default="OPENAI_API_KEY", help="environment variable holding the gateway key")
+    ap.add_argument(
+        "--api-key-env",
+        default="OPENAI_API_KEY",
+        help="environment variable holding the gateway key",
+    )
     ap.add_argument("--ready-timeout", type=float, default=600.0)
     ap.add_argument("--timeout", type=float, default=600.0, help="per HTTP request")
-    ap.add_argument("--max-chunk-seconds", type=float, default=30.0, help="the server's QUAN_MAX_CHUNK_SECONDS")
+    ap.add_argument(
+        "--max-chunk-seconds", type=float, default=30.0, help="the server's QUAN_MAX_CHUNK_SECONDS"
+    )
     ap.add_argument("--out", type=Path)
     args = ap.parse_args()
     key = os.environ.get(args.api_key_env)
@@ -213,7 +284,11 @@ def main() -> int:
 
     gw = Gateway(args.base_url, key, args.timeout)
     failures: list[str] = []
-    report: dict = {"base_url": args.base_url, "commit": git_commit(), "started_unix": round(time.time())}
+    report: dict = {
+        "base_url": args.base_url,
+        "commit": git_commit(),
+        "started_unix": round(time.time()),
+    }
     report["ready_wait_s"] = round(wait_ready(gw, args.ready_timeout), 3)
     report["health"] = gw.get_json("/health", auth=False)
     models = gw.get_json("/v1/models")
@@ -230,23 +305,34 @@ def main() -> int:
         res = run_fixture(gw, path.read_bytes())
         res["audio_s"] = info["samples"] / info["sample_rate"]
         name = path.name
-        if not (res["text"] == res["text_body"] == res["sse_joined"] == res["sse_done"]) or res["sse_errors"]:
+        if (
+            not (res["text"] == res["text_body"] == res["sse_joined"] == res["sse_done"])
+            or res["sse_errors"]
+        ):
             failures.append(f"{name}: json/text/SSE disagree or SSE error {res['sse_errors']}")
         if res["usage"] != {"type": "duration", "seconds": res["audio_s"]}:
             failures.append(f"{name}: usage {res['usage']}")
-        if res["verbose"] != {"text": res["text"], "language": "vietnamese", "duration": res["audio_s"],
-                              "usage": res["usage"]}:
+        if res["verbose"] != {
+            "text": res["text"],
+            "language": "vietnamese",
+            "duration": res["audio_s"],
+            "usage": res["usage"],
+        }:
             failures.append(f"{name}: verbose_json disagrees with json")
         for fmt, cues in res["cues"].items():
-            if (cues is None or " ".join(c[2] for c in cues) != res["text"]
-                    or not all(0 <= a < b <= res["audio_s"] + 0.0005 for a, b, _ in cues)
-                    or not all(p[1] <= n[0] for p, n in zip(cues, cues[1:]))
-                    or res["cue_content_types"][fmt] != "text/plain; charset=utf-8"):
+            if (
+                cues is None
+                or " ".join(c[2] for c in cues) != res["text"]
+                or not all(0 <= a < b <= res["audio_s"] + 0.0005 for a, b, _ in cues)
+                or not all(p[1] <= n[0] for p, n in pairwise(cues))
+                or res["cue_content_types"][fmt] != "text/plain; charset=utf-8"
+            ):
                 failures.append(f"{name}: {fmt} malformed, unordered or disagrees with json")
         res["cues"] = {f: len(c or []) for f, c in res["cues"].items()}  # counts only in the report
         del res["verbose"]
-        if res["text_content_type"] != "text/plain; charset=utf-8" or not res["sse_content_type"].startswith(
-                "text/event-stream"):
+        if res["text_content_type"] != "text/plain; charset=utf-8" or not res[
+            "sse_content_type"
+        ].startswith("text/event-stream"):
             failures.append(f"{name}: content types")
         if res["audio_s"] <= args.max_chunk_seconds:
             res["baseline"] = baseline[f"{name}:full"]["text"]
@@ -269,12 +355,17 @@ def main() -> int:
             res["wer"] = round(wer(ref, res["text"]), 4)
             res["rest_wer"] = round(wer(ref, report["results"][name]["text"]), 4)
             if res["wer"] > res["rest_wer"] + REALTIME_WER_SLACK:
-                failures.append(f"realtime {name}: WER {res['wer']} > REST {res['rest_wer']} + {REALTIME_WER_SLACK}")
+                failures.append(
+                    f"realtime {name}: WER {res['wer']} > REST {res['rest_wer']} + {REALTIME_WER_SLACK}"
+                )
         elif name == "silence_2s.wav" and res["text"] != "":
             failures.append(f"realtime {name}: expected empty transcript")
     report["metrics_excerpt"] = [
-        line for line in gw.request("GET", "/metrics").read().decode().splitlines()
-        if line.startswith(("quan_transcriptions_total", "quan_jobs_total", "quan_decodes_total", "quan_realtime_"))
+        line
+        for line in gw.request("GET", "/metrics").read().decode().splitlines()
+        if line.startswith(
+            ("quan_transcriptions_total", "quan_jobs_total", "quan_decodes_total", "quan_realtime_")
+        )
     ]
     report["failures"] = failures
     out = json.dumps(report, ensure_ascii=False, indent=2)

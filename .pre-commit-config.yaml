@@ -1,0 +1,56 @@
+# references/: read-only upstream sources. tests/contract/examples/: byte-exact wire payloads
+# (SRT/VTT/SSE end with a blank line, text/plain has no trailing newline) - never rewrite them.
+exclude: '^(\.pi|references|tests/contract/examples)/'
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.4.0
+    hooks:
+      - id: check-added-large-files
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: check-merge-conflict
+      - id: check-toml
+      - id: check-yaml
+        args:
+          - --unsafe
+
+  - repo: https://github.com/PyCQA/autoflake
+    rev: v2.3.3
+    hooks:
+      - id: autoflake
+        args:
+          [
+            "--in-place",
+            "--remove-all-unused-imports",
+            "--remove-unused-variable",
+            "--ignore-init-module-imports",
+            "--recursive",
+          ]
+
+  - repo: https://github.com/PyCQA/isort
+    rev: 5.12.0
+    hooks:
+      - id: isort
+        name: isort (python)
+      - id: isort
+        name: isort (cython)
+        types: [cython]
+      - id: isort
+        name: isort (pyi)
+        types: [pyi]
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.4
+    hooks:
+      - id: ruff-format
+        name: format with ruff
+        args: [--config, ruff.toml]
+        # types_or: [ python, pyi, jupyter ]
+      - id: ruff
+        name: lint with ruff
+        # types_or: [ python, pyi, jupyter ]
+        args:
+          - --fix
+          - --config
+          - ruff.toml

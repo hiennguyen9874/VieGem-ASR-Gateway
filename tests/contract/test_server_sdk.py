@@ -23,8 +23,19 @@ from websockets.exceptions import InvalidStatus
 from app.chunking import split
 from app.transcription import MODEL_ID
 from tests.fake_engine import FakeEngine
-from tests.live_server import (KEY, SR, expected_deltas, expected_turn, name, noise, parse_cues, pcm24, serve,
-                               wait_for, wav_file)
+from tests.live_server import (
+    expected_deltas,
+    expected_turn,
+    KEY,
+    name,
+    noise,
+    parse_cues,
+    pcm24,
+    serve,
+    SR,
+    wait_for,
+    wav_file,
+)
 
 EXAMPLES = Path(__file__).parent / "examples"
 JS = Path(__file__).parent / "js"

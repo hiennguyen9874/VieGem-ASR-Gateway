@@ -20,12 +20,19 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 from app.audio import AudioIngress
 from app.config import Config, ConfigError
 from app.engine import Engine, EngineWorker, QuanEngine
-from app.errors import (APIError, install_handlers, internal_error, invalid_api_key, model_not_ready, send_error,
-                        shutting_down)
-from app.observability import Metrics, configure_logging, log, request_id
+from app.errors import (
+    APIError,
+    install_handlers,
+    internal_error,
+    invalid_api_key,
+    model_not_ready,
+    send_error,
+    shutting_down,
+)
+from app.observability import configure_logging, log, Metrics, request_id
+from app.realtime import install as install_realtime
 from app.scheduler import Scheduler
 from app.schemas import Status
-from app.realtime import install as install_realtime
 from app.transcription import install as install_transcription
 
 PUBLIC_PATHS = frozenset({"/health", "/ready"})  # probes; everything else needs an API key
@@ -47,8 +54,12 @@ def create_app(config: Config | None = None, engine: Engine | None = None) -> Fa
     configure_logging(config.log_level)
     if engine is None:
         if not config.models_dir.is_dir():
-            raise ConfigError(f"QUAN_MODELS_DIR is not a directory (run scripts/stage_models.py): {config.models_dir}")
-        engine = QuanEngine(config.models_dir, config.device, warmup_seconds=config.max_chunk_seconds)
+            raise ConfigError(
+                f"QUAN_MODELS_DIR is not a directory (run scripts/stage_models.py): {config.models_dir}"
+            )
+        engine = QuanEngine(
+            config.models_dir, config.device, warmup_seconds=config.max_chunk_seconds
+        )
 
     if not config.spool_dir.is_dir():
         raise ConfigError(f"QUAN_SPOOL_DIR is not a directory: {config.spool_dir}")
@@ -80,7 +91,12 @@ def create_app(config: Config | None = None, engine: Engine | None = None) -> Fa
             log(level, "server.stopped", drained=drained, worker_stopped=stopped)
 
     app = FastAPI(lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
-    app.state.config, app.state.metrics, app.state.worker, app.state.scheduler = config, metrics, worker, scheduler
+    app.state.config, app.state.metrics, app.state.worker, app.state.scheduler = (
+        config,
+        metrics,
+        worker,
+        scheduler,
+    )
     app.state.audio = audio
     install_handlers(app)
     install_transcription(app, config, audio, scheduler, worker, metrics)
@@ -91,7 +107,9 @@ def create_app(config: Config | None = None, engine: Engine | None = None) -> Fa
     async def health():
         """Liveness: fails only when a restart is needed (load/recovery failed, or an inference call hangs)."""
         if not worker.healthy:
-            return APIError(503, "server_error", "unhealthy", "Inference worker needs a restart.").response()
+            return APIError(
+                503, "server_error", "unhealthy", "Inference worker needs a restart."
+            ).response()
         return Status(status="ok")
 
     @app.get("/ready", response_model=Status)
@@ -160,9 +178,18 @@ class GatewayMiddleware:
                 await send_error(scope, send_with_id, internal_error())
         finally:
             duration = time.monotonic() - started
-            self._metrics.inc("http_requests_total", "HTTP requests and WebSocket handshakes by status.",
-                              status=str(status))
+            self._metrics.inc(
+                "http_requests_total",
+                "HTTP requests and WebSocket handshakes by status.",
+                status=str(status),
+            )
             # Path only: no query string, headers, body or client filename.
-            log(logging.INFO, "http.request", method=scope.get("method", "WS"), path=log_path(scope["path"]),
-                status=status, duration_ms=round(duration * 1000, 1))
+            log(
+                logging.INFO,
+                "http.request",
+                method=scope.get("method", "WS"),
+                path=log_path(scope["path"]),
+                status=status,
+                duration_ms=round(duration * 1000, 1),
+            )
             request_id.reset(token)

@@ -20,7 +20,9 @@ def verbose_json(text: str, audio_s: float, words: Sequence[Word] | None = None)
     """`words` is None when not requested (omitted, never null); an empty list stays `[]`."""
     body: dict = {"text": text, "language": LANGUAGE, "duration": audio_s}
     if words is not None:
-        body["words"] = [{"word": w.text, "start": seconds(w.start), "end": seconds(w.end)} for w in words]
+        body["words"] = [
+            {"word": w.text, "start": seconds(w.start), "end": seconds(w.end)} for w in words
+        ]
     body["usage"] = {"type": "duration", "seconds": audio_s}
     return body
 
@@ -34,10 +36,13 @@ def _clock(samples: int, sep: str) -> str:
 
 
 def srt(segments: Sequence[Segment]) -> str:
-    return "".join(f"{i}\n{_clock(c.start, ',')} --> {_clock(c.end, ',')}\n{c.text}\n\n"
-                   for i, c in enumerate(segments, 1))
+    return "".join(
+        f"{i}\n{_clock(c.start, ',')} --> {_clock(c.end, ',')}\n{c.text}\n\n"
+        for i, c in enumerate(segments, 1)
+    )
 
 
 def vtt(segments: Sequence[Segment]) -> str:
-    return "WEBVTT\n\n" + "".join(f"{_clock(c.start, '.')} --> {_clock(c.end, '.')}\n{c.text}\n\n"
-                                  for c in segments)
+    return "WEBVTT\n\n" + "".join(
+        f"{_clock(c.start, '.')} --> {_clock(c.end, '.')}\n{c.text}\n\n" for c in segments
+    )

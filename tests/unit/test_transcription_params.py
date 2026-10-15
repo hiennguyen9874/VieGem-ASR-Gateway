@@ -7,7 +7,7 @@ import pytest
 
 from app import transcription
 from app.errors import APIError
-from app.transcription import MODEL_ID, Joiner, Params, model_object, parse_params, served_models
+from app.transcription import Joiner, MODEL_ID, model_object, Params, parse_params, served_models
 from tests.fake_engine import config
 
 EXAMPLES = Path(__file__).resolve().parents[1] / "contract/examples"

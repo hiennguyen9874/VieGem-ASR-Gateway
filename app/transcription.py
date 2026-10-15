@@ -30,22 +30,34 @@ from starlette.responses import JSONResponse, Response
 from starlette.types import Message, Receive, Scope, Send
 
 from app import formats
-from app.alignment import AlignmentError, align, segments
+from app.alignment import align, AlignmentError, segments
 from app.audio import AudioIngress
 from app.chunking import Span, split
-from app.config import SAMPLE_RATE, Config
+from app.config import Config, SAMPLE_RATE
 from app.engine import ChunkResult, EngineWorker
-from app.errors import (APIError, alignment_failed, internal_error, invalid_request, model_not_found,
-                        model_not_ready, request_timeout, shutting_down)
-from app.observability import Metrics, log
+from app.errors import (
+    alignment_failed,
+    APIError,
+    internal_error,
+    invalid_request,
+    model_not_found,
+    model_not_ready,
+    request_timeout,
+    shutting_down,
+)
+from app.observability import log, Metrics
 from app.scheduler import JobKind, Lane, Scheduler
 
 MODEL_ID = "quan-transcribe-1.0"
 WHISPER_ALIAS = "whisper-1"  # opt-in (QUAN_WHISPER_ALIAS); same QUAN backend, not Whisper output
-MODEL_CREATED = 1791950390  # commit time of the pinned weights revision (docs/api-contract.vi.md §3)
+MODEL_CREATED = (
+    1791950390  # commit time of the pinned weights revision (docs/api-contract.vi.md §3)
+)
 MODEL_OWNER = "qnguyen3"
 
-SINGLE_FIELDS = frozenset({"model", "language", "temperature", "prompt", "response_format", "stream"})
+SINGLE_FIELDS = frozenset(
+    {"model", "language", "temperature", "prompt", "response_format", "stream"}
+)
 REPEATED_FIELDS = frozenset({"include[]", "timestamp_granularities[]"})
 RESPONSE_FORMATS = ("json", "text", "verbose_json", "srt", "vtt")
 STREAM_FORMATS = ("json", "text")
@@ -66,6 +78,7 @@ T = TypeVar("T")
 
 # -- models -------------------------------------------------------------------------------------------------------
 
+
 def served_models(config: Config) -> tuple[str, ...]:
     return (MODEL_ID, WHISPER_ALIAS) if config.whisper_alias else (MODEL_ID,)
 
@@ -75,6 +88,7 @@ def model_object(model_id: str) -> dict:
 
 
 # -- request parameters -------------------------------------------------------------------------------------------
+
 
 class Params(NamedTuple):
     model: str
@@ -98,48 +112,75 @@ def parse_params(fields: Sequence[tuple[str, str]], config: Config) -> Params:
     for name, value in fields:
         if name in SINGLE_FIELDS:
             if name in values:
-                raise invalid_request("invalid_value", f"Parameter '{name}' must be sent once.", name)
+                raise invalid_request(
+                    "invalid_value", f"Parameter '{name}' must be sent once.", name
+                )
             values[name] = value
 
     model = values.get("model", "")
     if not model:
-        raise invalid_request("missing_required_parameter", "Missing required parameter: 'model'.", "model")
+        raise invalid_request(
+            "missing_required_parameter", "Missing required parameter: 'model'.", "model"
+        )
     if "include[]" in names:
         raise _unsupported("include[]")
     granularities = frozenset(v for n, v in fields if n == "timestamp_granularities[]")
     if not granularities <= set(GRANULARITIES):
-        raise invalid_request("invalid_value", f"Supported timestamp granularities: {', '.join(GRANULARITIES)}.",
-                              "timestamp_granularities[]")
+        raise invalid_request(
+            "invalid_value",
+            f"Supported timestamp granularities: {', '.join(GRANULARITIES)}.",
+            "timestamp_granularities[]",
+        )
     if "language" in values and values["language"] != "vi":
-        raise invalid_request("unsupported_language", "Only language 'vi' is supported.", "language")
+        raise invalid_request(
+            "unsupported_language", "Only language 'vi' is supported.", "language"
+        )
     if "temperature" in values:
         try:
             temperature = float(values["temperature"])
         except ValueError:
             temperature = math.nan
         if not math.isfinite(temperature):
-            raise invalid_request("invalid_value", "Parameter 'temperature' must be a number.", "temperature")
+            raise invalid_request(
+                "invalid_value", "Parameter 'temperature' must be a number.", "temperature"
+            )
         if temperature != 0:
-            raise invalid_request("unsupported_parameter", "Only temperature 0 is supported.", "temperature")
+            raise invalid_request(
+                "unsupported_parameter", "Only temperature 0 is supported.", "temperature"
+            )
     if values.get("prompt"):
         raise _unsupported("prompt")
     response_format = values.get("response_format", "json")
     if response_format not in RESPONSE_FORMATS:
-        raise invalid_request("unsupported_response_format",
-                              f"Supported response formats: {', '.join(RESPONSE_FORMATS)}.", "response_format")
+        raise invalid_request(
+            "unsupported_response_format",
+            f"Supported response formats: {', '.join(RESPONSE_FORMATS)}.",
+            "response_format",
+        )
     stream = values.get("stream", "false")
     if stream not in ("true", "false"):
-        raise invalid_request("invalid_value", "Parameter 'stream' must be 'true' or 'false'.", "stream")
+        raise invalid_request(
+            "invalid_value", "Parameter 'stream' must be 'true' or 'false'.", "stream"
+        )
     if stream == "true" and response_format not in STREAM_FORMATS:
-        raise invalid_request("unsupported_parameter",
-                              f"Streaming is supported only for {', '.join(STREAM_FORMATS)}.", "stream")
+        raise invalid_request(
+            "unsupported_parameter",
+            f"Streaming is supported only for {', '.join(STREAM_FORMATS)}.",
+            "stream",
+        )
     if granularities and response_format != "verbose_json":
-        raise invalid_request("unsupported_parameter", "Timestamp granularities require response_format "
-                              "'verbose_json'.", "timestamp_granularities[]")
+        raise invalid_request(
+            "unsupported_parameter",
+            "Timestamp granularities require response_format 'verbose_json'.",
+            "timestamp_granularities[]",
+        )
     # verbose_json carries no `segments` (their schema needs Whisper-only fields); cues come with srt/vtt.
     if "segment" in granularities or ("word" in granularities and not WORD_TIMESTAMPS):
-        raise invalid_request("unsupported_parameter", "Unsupported timestamp granularity.",
-                              "timestamp_granularities[]")
+        raise invalid_request(
+            "unsupported_parameter",
+            "Unsupported timestamp granularity.",
+            "timestamp_granularities[]",
+        )
     # A served-model check comes last so a malformed request gets its 400 first.
     if model not in served_models(config):
         raise model_not_found(model)
@@ -147,6 +188,7 @@ def parse_params(fields: Sequence[tuple[str, str]], config: Config) -> Params:
 
 
 # -- chunks -> text -----------------------------------------------------------------------------------------------
+
 
 class Joiner:
     """Join chunk texts with one space; empty chunks add nothing. `"".join(deltas) == text`."""
@@ -179,8 +221,9 @@ async def _until(deadline: float, aw: Awaitable[T]) -> T:
         raise request_timeout() from None
 
 
-async def run_chunks(lane: Lane, wav: np.ndarray, spans: Sequence[Span], deadline: float,
-                     window: int) -> AsyncIterator[tuple[Span, ChunkResult]]:
+async def run_chunks(
+    lane: Lane, wav: np.ndarray, spans: Sequence[Span], deadline: float, window: int
+) -> AsyncIterator[tuple[Span, ChunkResult]]:
     """Yield each chunk's span and result in audio order; at most `window` jobs in flight.
 
     Admission runs alongside result delivery: a full queue must not delay an already-finished chunk. The
@@ -192,7 +235,7 @@ async def run_chunks(lane: Lane, wav: np.ndarray, spans: Sequence[Span], deadlin
 
     def submit_next():
         s = todo.popleft()
-        return s, asyncio.create_task(_until(deadline, lane.submit(wav[s.start:s.end], deadline)))
+        return s, asyncio.create_task(_until(deadline, lane.submit(wav[s.start : s.end], deadline)))
 
     try:
         while todo or jobs or admission is not None:
@@ -209,7 +252,7 @@ async def run_chunks(lane: Lane, wav: np.ndarray, spans: Sequence[Span], deadlin
                 jobs.append((admission[0], admission[1].result()))
                 admission = None
                 continue
-            waiters = ([admission[1]] if admission is not None else [])
+            waiters = [admission[1]] if admission is not None else []
             if jobs:
                 waiters.append(jobs[0][1].future)
             await _until(deadline, asyncio.wait(waiters, return_when=asyncio.FIRST_COMPLETED))
@@ -228,6 +271,7 @@ async def run_chunks(lane: Lane, wav: np.ndarray, spans: Sequence[Span], deadlin
 
 
 # -- ASGI plumbing ------------------------------------------------------------------------------------------------
+
 
 class Disconnected(Exception):
     """The client went away before the response was complete."""
@@ -282,7 +326,11 @@ def _timed(send: Send, timeout: float) -> Send:
 
 
 def _sse(payload: dict) -> bytes:
-    return b"data: " + json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode() + b"\n\n"
+    return (
+        b"data: "
+        + json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode()
+        + b"\n\n"
+    )
 
 
 class _Output:
@@ -297,10 +345,14 @@ class _Output:
 
     async def start_stream(self) -> None:
         self.streaming = True
-        await self.send({"type": "http.response.start", "status": 200, "headers": list(SSE_HEADERS)})
+        await self.send(
+            {"type": "http.response.start", "status": 200, "headers": list(SSE_HEADERS)}
+        )
 
     async def event(self, payload: dict, last: bool = False) -> None:
-        await self.send({"type": "http.response.body", "body": _sse(payload), "more_body": not last})
+        await self.send(
+            {"type": "http.response.body", "body": _sse(payload), "more_body": not last}
+        )
 
     async def error(self, error: APIError) -> None:
         """HTTP error before the stream started; one `error` event (and the end of the stream) after."""
@@ -315,11 +367,18 @@ class _Output:
 
 # -- endpoint -----------------------------------------------------------------------------------------------------
 
+
 class TranscriptionEndpoint:
     """ASGI app for POST /v1/audio/transcriptions (routed by method in `install`)."""
 
-    def __init__(self, config: Config, audio: AudioIngress, scheduler: Scheduler, worker: EngineWorker,
-                 metrics: Metrics):
+    def __init__(
+        self,
+        config: Config,
+        audio: AudioIngress,
+        scheduler: Scheduler,
+        worker: EngineWorker,
+        metrics: Metrics,
+    ):
         self._config, self._audio, self._scheduler, self._worker = config, audio, scheduler, worker
         self._metrics = metrics
         self._window = config.queue_max_jobs_per_lane
@@ -344,13 +403,18 @@ class TranscriptionEndpoint:
             deadline = started + self._config.request_timeout_seconds
             async with self._audio.receive(Request(scope, receive), deadline) as upload:
                 params = parse_params(upload.fields, self._config)
-                lane = self._scheduler.open_lane(JobKind.FILE)  # before FFmpeg: a full server costs no CPU
+                lane = self._scheduler.open_lane(
+                    JobKind.FILE
+                )  # before FFmpeg: a full server costs no CPU
                 watch = DisconnectWatch(receive)
                 wav = await watch.run(self._audio.decode(upload.path, deadline))
             # The spool file is gone here; only the waveform is kept while waiting for the GPU.
             audio_s = len(wav) / SAMPLE_RATE
-            self._metrics.inc("transcription_audio_seconds_total", "Decoded audio accepted for transcription.",
-                              amount=audio_s)
+            self._metrics.inc(
+                "transcription_audio_seconds_total",
+                "Decoded audio accepted for transcription.",
+                amount=audio_s,
+            )
             release_audio = self._audio.hold(wav)
             spans = split(wav, self._config.max_chunk_samples)
             chunks = len(spans)
@@ -359,7 +423,9 @@ class TranscriptionEndpoint:
                 await _until(deadline, watch.run(self._stream(out, results, started)))
             else:
                 chunks_done = await _until(deadline, watch.run(_collect(results)))
-                await _until(deadline, out.respond(_final(params, chunks_done, audio_s, self._worker.pieces)))
+                await _until(
+                    deadline, out.respond(_final(params, chunks_done, audio_s, self._worker.pieces))
+                )
             outcome = "ok"
         except APIError as e:
             outcome = e.code
@@ -385,14 +451,28 @@ class TranscriptionEndpoint:
                 watch.close()
             fmt = params.response_format if params else "unknown"
             stream = str(params.stream).lower() if params else "unknown"
-            self._metrics.inc("transcriptions_total", "Transcription requests by outcome.", response_format=fmt,
-                              stream=stream, outcome=outcome)
+            self._metrics.inc(
+                "transcriptions_total",
+                "Transcription requests by outcome.",
+                response_format=fmt,
+                stream=stream,
+                outcome=outcome,
+            )
             # Metadata only: no transcript, filename or field values.
-            log(logging.INFO, "transcription.request", response_format=fmt, stream=stream,
-                audio_s=None if audio_s is None else round(audio_s, 3), chunks=chunks, outcome=outcome,
-                duration_ms=round((time.monotonic() - started) * 1000, 1))
+            log(
+                logging.INFO,
+                "transcription.request",
+                response_format=fmt,
+                stream=stream,
+                audio_s=None if audio_s is None else round(audio_s, 3),
+                chunks=chunks,
+                outcome=outcome,
+                duration_ms=round((time.monotonic() - started) * 1000, 1),
+            )
 
-    async def _stream(self, out: _Output, results: AsyncIterator[tuple[Span, ChunkResult]], started: float) -> None:
+    async def _stream(
+        self, out: _Output, results: AsyncIterator[tuple[Span, ChunkResult]], started: float
+    ) -> None:
         joiner = Joiner()
         first = True
 
@@ -401,8 +481,11 @@ class TranscriptionEndpoint:
             await out.event(payload, last)
             if first:
                 first = False
-                self._metrics.observe("sse_first_event_seconds", "From request start to the first SSE event.",
-                                      time.monotonic() - started)
+                self._metrics.observe(
+                    "sse_first_event_seconds",
+                    "From request start to the first SSE event.",
+                    time.monotonic() - started,
+                )
 
         await out.start_stream()
         async with aclosing(results):
@@ -412,13 +495,19 @@ class TranscriptionEndpoint:
         await event({"type": "transcript.text.done", "text": joiner.text}, last=True)
 
 
-async def _collect(results: AsyncIterator[tuple[Span, ChunkResult]]) -> list[tuple[Span, ChunkResult]]:
+async def _collect(
+    results: AsyncIterator[tuple[Span, ChunkResult]],
+) -> list[tuple[Span, ChunkResult]]:
     async with aclosing(results):
         return [r async for r in results]
 
 
-def _final(params: Params, chunks: Sequence[tuple[Span, ChunkResult]], audio_s: float,
-           pieces: Sequence[str]) -> Response:
+def _final(
+    params: Params,
+    chunks: Sequence[tuple[Span, ChunkResult]],
+    audio_s: float,
+    pieces: Sequence[str],
+) -> Response:
     joiner = Joiner()
     for _, result in chunks:
         joiner.add(result.text)
@@ -436,9 +525,15 @@ def _final(params: Params, chunks: Sequence[tuple[Span, ChunkResult]], audio_s: 
         except AlignmentError as e:
             log(logging.ERROR, "transcription.alignment_failed", reason=str(e), chunks=len(chunks))
             raise alignment_failed() from None
-        if " ".join(w.text for w in words) != text:  # Joiner and alignment must agree; never serve mismatched cues
-            log(logging.ERROR, "transcription.alignment_failed", reason="words do not rebuild the transcript",
-                chunks=len(chunks))
+        if (
+            " ".join(w.text for w in words) != text
+        ):  # Joiner and alignment must agree; never serve mismatched cues
+            log(
+                logging.ERROR,
+                "transcription.alignment_failed",
+                reason="words do not rebuild the transcript",
+                chunks=len(chunks),
+            )
             raise alignment_failed()
     if fmt == "verbose_json":
         return JSONResponse(formats.verbose_json(text, audio_s, words))  # words only when requested
@@ -447,8 +542,14 @@ def _final(params: Params, chunks: Sequence[tuple[Span, ChunkResult]], audio_s: 
     return Response(body, media_type="text/plain; charset=utf-8")
 
 
-def install(app: FastAPI, config: Config, audio: AudioIngress, scheduler: Scheduler, worker: EngineWorker,
-            metrics: Metrics) -> None:
+def install(
+    app: FastAPI,
+    config: Config,
+    audio: AudioIngress,
+    scheduler: Scheduler,
+    worker: EngineWorker,
+    metrics: Metrics,
+) -> None:
     models = served_models(config)
 
     @app.get("/v1/models")
@@ -461,5 +562,8 @@ def install(app: FastAPI, config: Config, audio: AudioIngress, scheduler: Schedu
             raise model_not_found(model_id)
         return model_object(model_id)
 
-    app.router.add_route("/v1/audio/transcriptions", TranscriptionEndpoint(config, audio, scheduler, worker, metrics),
-                         methods=["POST"])
+    app.router.add_route(
+        "/v1/audio/transcriptions",
+        TranscriptionEndpoint(config, audio, scheduler, worker, metrics),
+        methods=["POST"],
+    )

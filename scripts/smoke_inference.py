@@ -24,9 +24,15 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from scripts.scoring import wer
+from scripts.scoring import wer  # noqa: E402
 
-DECODER = {"decoder": "greedy", "use_lm": False, "chunk_seconds": 30.0, "batch_seconds": 600.0, "left_chunks": None}
+DECODER = {
+    "decoder": "greedy",
+    "use_lm": False,
+    "chunk_seconds": 30.0,
+    "batch_seconds": 600.0,
+    "left_chunks": None,
+}
 # Lengths (samples @16 kHz) probed through the model without the quiet splitter, to find the frontend minimum.
 SHORT_PROBE = [1, 160, 161, 320, 480, 640, 1280, 1600, 1601, 3200, 8000]
 
@@ -37,7 +43,9 @@ def block_network() -> None:
 
     def hook(event, args):
         if event in ("socket.connect", "socket.getaddrinfo", "socket.sendto"):
-            raise RuntimeError(f"network access blocked: {event} {args[1:] if event == 'socket.connect' else args}")
+            raise RuntimeError(
+                f"network access blocked: {event} {args[1:] if event == 'socket.connect' else args}"
+            )
 
     sys.addaudithook(hook)
 
@@ -45,7 +53,10 @@ def block_network() -> None:
 def rss_mb() -> dict:
     status = Path("/proc/self/status").read_text()
     cur = next(int(line.split()[1]) for line in status.splitlines() if line.startswith("VmRSS:"))
-    return {"rss_mb": round(cur / 1024), "peak_rss_mb": round(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024)}
+    return {
+        "rss_mb": round(cur / 1024),
+        "peak_rss_mb": round(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024),
+    }
 
 
 def gpu_mem(torch) -> dict:
@@ -73,21 +84,43 @@ def environment(torch) -> dict:
         p = torch.cuda.get_device_properties(0)
         env |= {"gpu": p.name, "gpu_total_mb": p.total_memory >> 20}
         try:
-            env["driver"] = subprocess.run(
-                ["nvidia-smi", "--query-gpu=driver_version", "--format=csv,noheader", "-i", "0"],
-                capture_output=True, text=True, timeout=10,
-            ).stdout.strip().splitlines()[0]
+            env["driver"] = (
+                subprocess.run(
+                    [
+                        "nvidia-smi",
+                        "--query-gpu=driver_version",
+                        "--format=csv,noheader",
+                        "-i",
+                        "0",
+                    ],
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                )
+                .stdout.strip()
+                .splitlines()[0]
+            )
         except Exception as e:  # informational only
             env["driver"] = f"unknown ({type(e).__name__})"
     return env
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--models-dir", type=Path, default=Path(os.environ.get("QUAN_MODELS_DIR", ROOT / "models")))
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    ap.add_argument(
+        "--models-dir", type=Path, default=Path(os.environ.get("QUAN_MODELS_DIR", ROOT / "models"))
+    )
     ap.add_argument("--device", default="cuda")
-    ap.add_argument("--repeats", type=int, default=5, help="warm timing repeats per fixture and mode")
-    ap.add_argument("--no-network", action="store_true", help="fail on any network access (offline reload check)")
+    ap.add_argument(
+        "--repeats", type=int, default=5, help="warm timing repeats per fixture and mode"
+    )
+    ap.add_argument(
+        "--no-network",
+        action="store_true",
+        help="fail on any network access (offline reload check)",
+    )
     ap.add_argument("--out", type=Path, help="write the JSON report here")
     args = ap.parse_args()
     if args.no_network:
@@ -98,8 +131,12 @@ def main() -> int:
     import torch
 
     from app.quan_loader import load_quan
-    from scripts.fetch_fixtures import LARGE_DIR, MANIFEST as FIXTURES_MANIFEST, SMALL_DIR, verify as verify_fixtures
-    from scripts.stage_models import MANIFEST as ASSET_MANIFEST, check as check_assets
+    from scripts.fetch_fixtures import LARGE_DIR
+    from scripts.fetch_fixtures import MANIFEST as FIXTURES_MANIFEST
+    from scripts.fetch_fixtures import SMALL_DIR
+    from scripts.fetch_fixtures import verify as verify_fixtures
+    from scripts.stage_models import check as check_assets
+    from scripts.stage_models import MANIFEST as ASSET_MANIFEST
 
     failures = []
     assets = json.loads(ASSET_MANIFEST.read_text())
@@ -115,7 +152,10 @@ def main() -> int:
         "environment": environment(torch),
         "network_blocked": args.no_network,
         "hf_home": os.environ.get("HF_HOME"),
-        "revisions": {"code": assets["code"], "models": {k: v["revision"] for k, v in assets["models"].items()}},
+        "revisions": {
+            "code": assets["code"],
+            "models": {k: v["revision"] for k, v in assets["models"].items()},
+        },
         "decoder": DECODER,
     }
     on_cuda = torch.device(args.device).type == "cuda"
@@ -133,8 +173,12 @@ def main() -> int:
 
     def transcribe(wav, streaming):
         return asr.transcribe(
-            wav, streaming=streaming, left_chunks=DECODER["left_chunks"],
-            chunk_seconds=DECODER["chunk_seconds"], batch_seconds=DECODER["batch_seconds"], use_lm=False,
+            wav,
+            streaming=streaming,
+            left_chunks=DECODER["left_chunks"],
+            chunk_seconds=DECODER["chunk_seconds"],
+            batch_seconds=DECODER["batch_seconds"],
+            use_lm=False,
         )
 
     wavs = {}
@@ -187,7 +231,8 @@ def main() -> int:
     a, b = wavs["vi_a.wav"], wavs["vi_b.wav"]
     batched = asr.transcribe([a, b], use_lm=False)
     report["batch_isolation"] = {
-        "equal_to_single": batched == [results["vi_a.wav:full"]["text"], results["vi_b.wav:full"]["text"]],
+        "equal_to_single": batched
+        == [results["vi_a.wav:full"]["text"], results["vi_b.wav:full"]["text"]],
         "texts": batched,
     }
     if not report["batch_isolation"]["equal_to_single"]:

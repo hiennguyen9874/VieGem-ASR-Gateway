@@ -12,7 +12,7 @@ from pathlib import Path
 
 import torch
 from quan_transcribe import QuanTranscribe
-from quan_transcribe.model import ModelConfig, QuanCTC, load_encoder
+from quan_transcribe.model import load_encoder, ModelConfig, QuanCTC
 from safetensors.torch import load_file
 from transformers import AutoTokenizer
 
@@ -27,7 +27,10 @@ def load_quan(models_dir: str | Path, device: str | torch.device) -> QuanTranscr
     cfg = ModelConfig.from_dict(json.loads((quan_dir / "config.json").read_text()))
     units = json.loads((quan_dir / "units.json").read_text())
     # The staged base must be the asset the checkpoint was trained on.
-    for key, value in (("config.json:encoder_id", cfg.encoder_id), ("units.json:model_id", units.get("model_id"))):
+    for key, value in (
+        ("config.json:encoder_id", cfg.encoder_id),
+        ("units.json:model_id", units.get("model_id")),
+    ):
         if value != BASE_ID:
             raise RuntimeError(f"unexpected base model {key}={value!r}, staged base is {BASE_ID}")
     if not base_dir.is_dir():
@@ -41,7 +44,9 @@ def load_quan(models_dir: str | Path, device: str | torch.device) -> QuanTranscr
     missing, unexpected = model.load_state_dict(state, strict=False)
     missing = [k for k in missing if not k.startswith("encoder.")]
     if missing or unexpected:
-        raise RuntimeError(f"checkpoint does not match the model: missing={missing} unexpected={unexpected}")
+        raise RuntimeError(
+            f"checkpoint does not match the model: missing={missing} unexpected={unexpected}"
+        )
     model = model.to(device).eval()
     tokenizer = AutoTokenizer.from_pretrained(str(base_dir))
     return QuanTranscribe(model, tokenizer, units["gemma_ids"], device)

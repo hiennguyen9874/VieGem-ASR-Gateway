@@ -37,10 +37,17 @@ import numpy as np
 from python_multipart.multipart import MultipartParseError, MultipartParser, parse_options_header
 from starlette.requests import ClientDisconnect, Request
 
-from app.config import SAMPLE_RATE, Config
-from app.errors import (APIError, audio_too_long, invalid_audio, invalid_request, request_timeout,
-                        request_too_large, server_busy)
-from app.observability import Metrics, log
+from app.config import Config, SAMPLE_RATE
+from app.errors import (
+    APIError,
+    audio_too_long,
+    invalid_audio,
+    invalid_request,
+    request_timeout,
+    request_too_large,
+    server_busy,
+)
+from app.observability import log, Metrics
 
 FILE_FIELD = "file"
 MAX_FORM_PARTS = 32  # file + fields, repeated `include[]`/`timestamp_granularities[]` included
@@ -52,8 +59,24 @@ MAX_PART_HEADER_BYTES = 4 * 1024
 # contains one of these: `mov` = mov,mp4,m4a,3gp,3g2,mj2; `matroska` = matroska,webm.
 DEMUXERS = ("wav", "flac", "mp3", "mov", "ogg", "matroska")
 DECODERS = (
-    "pcm_s16le", "pcm_s24le", "pcm_s32le", "pcm_u8", "pcm_f32le", "pcm_f64le", "pcm_alaw", "pcm_mulaw",
-    "flac", "alac", "mp1float", "mp2float", "mp3float", "aac", "vorbis", "libvorbis", "opus", "libopus",
+    "pcm_s16le",
+    "pcm_s24le",
+    "pcm_s32le",
+    "pcm_u8",
+    "pcm_f32le",
+    "pcm_f64le",
+    "pcm_alaw",
+    "pcm_mulaw",
+    "flac",
+    "alac",
+    "mp1float",
+    "mp2float",
+    "mp3float",
+    "aac",
+    "vorbis",
+    "libvorbis",
+    "opus",
+    "libopus",
 )
 READ_BYTES = 64 * 1024
 STDERR_KEEP_BYTES = 4 * 1024
@@ -87,9 +110,14 @@ class AudioIngress:
         self._held = 0
         self._metrics = metrics
         metrics.gauge_fn("spool_bytes", "Upload bytes held in temp files.", lambda: self._spooled)
-        metrics.gauge_fn("active_decodes", "Running FFmpeg decode processes.", lambda: self._decoding)
-        metrics.gauge_fn("decoded_audio_seconds", "Decoded audio held in RAM by requests in flight.",
-                         lambda: self._held / SAMPLE_RATE)
+        metrics.gauge_fn(
+            "active_decodes", "Running FFmpeg decode processes.", lambda: self._decoding
+        )
+        metrics.gauge_fn(
+            "decoded_audio_seconds",
+            "Decoded audio held in RAM by requests in flight.",
+            lambda: self._held / SAMPLE_RATE,
+        )
 
     @property
     def spool_dir(self) -> Path | None:
@@ -138,13 +166,19 @@ class AudioIngress:
         content_type, params = parse_options_header(request.headers.get("content-type", ""))
         boundary = params.get(b"boundary")
         if content_type != b"multipart/form-data" or not boundary:
-            raise invalid_request("invalid_value", "Content-Type must be multipart/form-data with a boundary.")
+            raise invalid_request(
+                "invalid_value", "Content-Type must be multipart/form-data with a boundary."
+            )
         declared = request.headers.get("content-length")  # the server has validated its syntax
         if declared is not None and int(declared) > self._max_body:
             raise request_too_large(self._max_body)
 
-        parser = MultipartParser(boundary, state.callbacks(), max_header_count=MAX_PART_HEADERS,
-                                 max_header_size=MAX_PART_HEADER_BYTES)
+        parser = MultipartParser(
+            boundary,
+            state.callbacks(),
+            max_header_count=MAX_PART_HEADERS,
+            max_header_size=MAX_PART_HEADER_BYTES,
+        )
         received = 0
         async for chunk in request.stream():
             received += len(chunk)
@@ -159,7 +193,9 @@ class AudioIngress:
         if not state.ended:
             raise invalid_request("invalid_value", "Malformed multipart body.")
         if state.path is None:
-            raise invalid_request("missing_required_parameter", "Missing required parameter: 'file'.", FILE_FIELD)
+            raise invalid_request(
+                "missing_required_parameter", "Missing required parameter: 'file'.", FILE_FIELD
+            )
 
     def _reserve_spool(self, n: int) -> None:
         if self._spooled + n > self._max_spool:
@@ -173,7 +209,9 @@ class AudioIngress:
         if self._spool_dir is None:
             raise RuntimeError("AudioIngress not started")
         try:
-            fd, name = tempfile.mkstemp(prefix="upload-", dir=self._spool_dir)  # server-generated name, mode 0600
+            fd, name = tempfile.mkstemp(
+                prefix="upload-", dir=self._spool_dir
+            )  # server-generated name, mode 0600
         except OSError as e:
             if e.errno in (errno.ENOSPC, errno.EDQUOT):
                 raise server_busy(retry_after=1) from None
@@ -229,18 +267,47 @@ class AudioIngress:
             outcome = "cancelled"
             raise
         finally:
-            self._metrics.inc("decodes_total", "FFmpeg decodes by outcome (anything but ok is a failure).",
-                              outcome=outcome)
-            self._metrics.observe("decode_seconds", "Wall time of one decode, slot wait included.",
-                                  time.monotonic() - started)
+            self._metrics.inc(
+                "decodes_total",
+                "FFmpeg decodes by outcome (anything but ok is a failure).",
+                outcome=outcome,
+            )
+            self._metrics.observe(
+                "decode_seconds",
+                "Wall time of one decode, slot wait included.",
+                time.monotonic() - started,
+            )
 
     def _argv(self, path: Path) -> list[str]:
         return [
-            self._ffmpeg, "-nostdin", "-hide_banner", "-nostats", "-loglevel", "error",
-            "-protocol_whitelist", "file", "-format_whitelist", ",".join(DEMUXERS),
-            "-codec_whitelist", ",".join(DECODERS), "-threads", "1",
-            "-i", f"file:{path}",
-            "-map", "0:a:0", "-vn", "-sn", "-dn", "-ac", "1", "-ar", str(SAMPLE_RATE), "-f", "f32le", "pipe:1",
+            self._ffmpeg,
+            "-nostdin",
+            "-hide_banner",
+            "-nostats",
+            "-loglevel",
+            "error",
+            "-protocol_whitelist",
+            "file",
+            "-format_whitelist",
+            ",".join(DEMUXERS),
+            "-codec_whitelist",
+            ",".join(DECODERS),
+            "-threads",
+            "1",
+            "-i",
+            f"file:{path}",
+            "-map",
+            "0:a:0",
+            "-vn",
+            "-sn",
+            "-dn",
+            "-ac",
+            "1",
+            "-ar",
+            str(SAMPLE_RATE),
+            "-f",
+            "f32le",
+            "pipe:1",
         ]
 
     async def _run_ffmpeg(self, path: Path, deadline: float) -> np.ndarray:
@@ -248,8 +315,11 @@ class AudioIngress:
         limit = self._max_samples * SAMPLE_BYTES
         # Minimal environment: the gateway's secrets (API keys, HF_TOKEN) never reach the child.
         proc = await asyncio.create_subprocess_exec(
-            *self._argv(path), stdin=asyncio.subprocess.DEVNULL, stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE, env={"PATH": os.environ.get("PATH", "/usr/bin:/bin")},
+            *self._argv(path),
+            stdin=asyncio.subprocess.DEVNULL,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            env={"PATH": os.environ.get("PATH", "/usr/bin:/bin")},
             start_new_session=True,
         )
         pcm = bytearray()
@@ -267,7 +337,7 @@ class AudioIngress:
 
         async def read_stderr() -> None:
             while block := await proc.stderr.read(READ_BYTES):
-                stderr.extend(block[:STDERR_KEEP_BYTES - len(stderr)])
+                stderr.extend(block[: STDERR_KEEP_BYTES - len(stderr)])
 
         try:
             async with asyncio.timeout(timeout):
@@ -336,10 +406,14 @@ class _FormState:
 
     def callbacks(self) -> dict:
         return {
-            "on_part_begin": self._part_begin, "on_header_field": self._header_field,
-            "on_header_value": self._header_value_cb, "on_header_end": self._header_end,
-            "on_headers_finished": self._headers_finished, "on_part_data": self._part_data,
-            "on_part_end": self._part_end, "on_end": self._end,
+            "on_part_begin": self._part_begin,
+            "on_header_field": self._header_field,
+            "on_header_value": self._header_value_cb,
+            "on_header_end": self._header_end,
+            "on_headers_finished": self._headers_finished,
+            "on_part_data": self._part_data,
+            "on_part_end": self._part_end,
+            "on_end": self._end,
         }
 
     def raise_pending(self) -> None:
@@ -354,7 +428,9 @@ class _FormState:
     def _part_begin(self) -> None:
         self._parts += 1
         if self._parts > MAX_FORM_PARTS:
-            self._fail(invalid_request("invalid_value", f"Too many form fields (max {MAX_FORM_PARTS})."))
+            self._fail(
+                invalid_request("invalid_value", f"Too many form fields (max {MAX_FORM_PARTS}).")
+            )
         self._disposition, self._name, self._is_file = None, None, False
         self._value.clear()
 
@@ -379,7 +455,9 @@ class _FormState:
         self._name = raw_name.decode("utf-8", "replace")
         if self._name == FILE_FIELD:
             if self.path is not None:
-                self._fail(invalid_request("invalid_value", "Only one 'file' part is allowed.", FILE_FIELD))
+                self._fail(
+                    invalid_request("invalid_value", "Only one 'file' part is allowed.", FILE_FIELD)
+                )
                 return
             self._is_file = True
             self._fd, self.path = self._ingress._new_spool_file()
@@ -416,7 +494,11 @@ class _FormState:
         try:
             self.fields.append((self._name, self._value.decode("utf-8")))
         except UnicodeDecodeError:
-            self._fail(invalid_request("invalid_value", f"Form field '{self._name[:64]}' is not valid UTF-8."))
+            self._fail(
+                invalid_request(
+                    "invalid_value", f"Form field '{self._name[:64]}' is not valid UTF-8."
+                )
+            )
 
     def _end(self) -> None:
         self.ended = True
@@ -435,4 +517,4 @@ class _FormState:
 
 def _write_all(fd: int, view: memoryview) -> None:
     while view:
-        view = view[os.write(fd, view):]
+        view = view[os.write(fd, view) :]

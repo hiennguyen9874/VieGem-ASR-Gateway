@@ -5,7 +5,8 @@ import re
 import tomllib
 from pathlib import Path
 
-from scripts.fetch_fixtures import MANIFEST as FIXTURES_MANIFEST, verify
+from scripts.fetch_fixtures import MANIFEST as FIXTURES_MANIFEST
+from scripts.fetch_fixtures import verify
 
 ROOT = Path(__file__).resolve().parents[2]
 COMMIT = re.compile(r"^[0-9a-f]{40}$")

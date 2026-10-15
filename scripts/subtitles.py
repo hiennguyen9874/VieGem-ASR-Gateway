@@ -3,8 +3,10 @@
 import re
 
 _CLOCK = r"(\d{{2,}}):([0-5]\d):([0-5]\d){sep}(\d{{3}})"
-_TIMING = {fmt: re.compile(_CLOCK.format(sep=sep) + " --> " + _CLOCK.format(sep=sep))
-           for fmt, sep in (("srt", ","), ("vtt", r"\."))}
+_TIMING = {
+    fmt: re.compile(_CLOCK.format(sep=sep) + " --> " + _CLOCK.format(sep=sep))
+    for fmt, sep in (("srt", ","), ("vtt", r"\."))
+}
 
 
 def parse_cues(body: str, fmt: str) -> list[tuple[float, float, str]] | None:
@@ -14,7 +16,7 @@ def parse_cues(body: str, fmt: str) -> list[tuple[float, float, str]] | None:
     if fmt == "vtt":
         if not body.startswith("WEBVTT\n\n"):
             return None
-        body = body[len("WEBVTT\n\n"):]
+        body = body[len("WEBVTT\n\n") :]
     if body and not body.endswith("\n\n"):
         return None
     cues = []
@@ -30,6 +32,11 @@ def parse_cues(body: str, fmt: str) -> list[tuple[float, float, str]] | None:
         if m is None:
             return None
         h, minute, s, ms, eh, em, es, ems = map(int, m.groups())
-        cues.append((h * 3600 + minute * 60 + s + ms / 1000,
-                     eh * 3600 + em * 60 + es + ems / 1000, lines[1]))
+        cues.append(
+            (
+                h * 3600 + minute * 60 + s + ms / 1000,
+                eh * 3600 + em * 60 + es + ems / 1000,
+                lines[1],
+            )
+        )
     return cues

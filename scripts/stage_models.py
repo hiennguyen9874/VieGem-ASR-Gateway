@@ -57,10 +57,23 @@ def check(name: str, entry: dict, dest: Path, update: bool) -> list[str]:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--dest", type=Path, default=DEFAULT_DEST, help="staging root (default $QUAN_MODELS_DIR or ./models)")
-    ap.add_argument("--verify", action="store_true", help="do not download; only verify staged files")
-    ap.add_argument("--update-manifest", action="store_true", help="write sizes/hashes of staged files to the manifest")
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    ap.add_argument(
+        "--dest",
+        type=Path,
+        default=DEFAULT_DEST,
+        help="staging root (default $QUAN_MODELS_DIR or ./models)",
+    )
+    ap.add_argument(
+        "--verify", action="store_true", help="do not download; only verify staged files"
+    )
+    ap.add_argument(
+        "--update-manifest",
+        action="store_true",
+        help="write sizes/hashes of staged files to the manifest",
+    )
     ap.add_argument("--only", action="append", help="limit to these manifest model names")
     args = ap.parse_args()
 

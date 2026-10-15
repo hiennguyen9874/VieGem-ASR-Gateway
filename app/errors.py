@@ -27,7 +27,13 @@ class APIError(Exception):
         headers: dict[str, str] | None = None,
     ):
         super().__init__(message)
-        self.status, self.type, self.code, self.message, self.param = status, type_, code, message, param
+        self.status, self.type, self.code, self.message, self.param = (
+            status,
+            type_,
+            code,
+            message,
+            param,
+        )
         self.headers = headers or {}
 
     def body(self) -> dict:
@@ -50,7 +56,13 @@ def invalid_api_key() -> APIError:
 def model_not_found(model: str) -> APIError:
     # The id is echoed only if it is short and printable; it is client input, not a secret.
     shown = model if len(model) <= 64 and model.isprintable() else "<invalid>"
-    return APIError(404, "invalid_request_error", "model_not_found", f"The model '{shown}' does not exist.", "model")
+    return APIError(
+        404,
+        "invalid_request_error",
+        "model_not_found",
+        f"The model '{shown}' does not exist.",
+        "model",
+    )
 
 
 def not_found() -> APIError:
@@ -58,7 +70,9 @@ def not_found() -> APIError:
 
 
 def request_too_large(limit_bytes: int, what: str = "Request body") -> APIError:
-    return APIError(413, "invalid_request_error", "request_too_large", f"{what} exceeds {limit_bytes} bytes.")
+    return APIError(
+        413, "invalid_request_error", "request_too_large", f"{what} exceeds {limit_bytes} bytes."
+    )
 
 
 def invalid_audio(message: str = "Audio file could not be decoded.") -> APIError:
@@ -66,13 +80,20 @@ def invalid_audio(message: str = "Audio file could not be decoded.") -> APIError
 
 
 def audio_too_long(limit_seconds: float) -> APIError:
-    return APIError(400, "invalid_request_error", "audio_too_long", f"Audio is longer than {limit_seconds:g} seconds.",
-                    "file")
+    return APIError(
+        400,
+        "invalid_request_error",
+        "audio_too_long",
+        f"Audio is longer than {limit_seconds:g} seconds.",
+        "file",
+    )
 
 
 def server_busy(retry_after: int | None = None) -> APIError:
     headers = {"Retry-After": str(retry_after)} if retry_after else None
-    return APIError(429, "rate_limit_error", "server_busy", "Server is busy, retry later.", headers=headers)
+    return APIError(
+        429, "rate_limit_error", "server_busy", "Server is busy, retry later.", headers=headers
+    )
 
 
 def inference_failed() -> APIError:
@@ -89,7 +110,9 @@ def internal_error() -> APIError:
 
 
 def model_not_ready() -> APIError:
-    return APIError(503, "server_error", "model_not_ready", "Model is not ready.", headers={"Retry-After": "5"})
+    return APIError(
+        503, "server_error", "model_not_ready", "Model is not ready.", headers={"Retry-After": "5"}
+    )
 
 
 def shutting_down() -> APIError:
@@ -102,22 +125,31 @@ def request_timeout() -> APIError:
 
 # -- realtime `error` events (docs/api-contract.vi.md §6) ---------------------------------------------------------
 
+
 def invalid_event(message: str, param: str | None = None) -> APIError:
     return invalid_request("invalid_event", message, param)
 
 
 def unsupported_event() -> APIError:
-    return invalid_request("unsupported_event", "This event type is not supported by this server.", "type")
+    return invalid_request(
+        "unsupported_event", "This event type is not supported by this server.", "type"
+    )
 
 
 def unknown_parameter(param: str) -> APIError:
     """`param` is the dotted path of the client's key, cut to 64 characters."""
-    return invalid_request("unknown_parameter", "Unknown parameter.", param[:64] if param.isprintable() else "<invalid>")
+    return invalid_request(
+        "unknown_parameter",
+        "Unknown parameter.",
+        param[:64] if param.isprintable() else "<invalid>",
+    )
 
 
 def input_audio_buffer_full(limit_seconds: float) -> APIError:
-    return invalid_request("input_audio_buffer_full",
-                           f"Input audio buffer would exceed {limit_seconds:g} seconds; commit or clear it first.")
+    return invalid_request(
+        "input_audio_buffer_full",
+        f"Input audio buffer would exceed {limit_seconds:g} seconds; commit or clear it first.",
+    )
 
 
 def input_audio_buffer_commit_empty() -> APIError:
@@ -125,19 +157,26 @@ def input_audio_buffer_commit_empty() -> APIError:
 
 
 def too_many_pending_items(limit: int) -> APIError:
-    return invalid_request("too_many_pending_items",
-                           f"More than {limit} committed items are waiting for transcription; commit again later.")
+    return invalid_request(
+        "too_many_pending_items",
+        f"More than {limit} committed items are waiting for transcription; commit again later.",
+    )
 
 
 def idle_timeout(seconds: float) -> APIError:
-    return invalid_request("idle_timeout", f"No client event for {seconds:g} seconds; closing the session.")
+    return invalid_request(
+        "idle_timeout", f"No client event for {seconds:g} seconds; closing the session."
+    )
 
 
 def session_expired(seconds: float) -> APIError:
-    return invalid_request("session_expired", f"Session reached its maximum duration of {seconds:g} seconds.")
+    return invalid_request(
+        "session_expired", f"Session reached its maximum duration of {seconds:g} seconds."
+    )
 
 
 # -- rendering ----------------------------------------------------------------------------------------------------
+
 
 async def send_error(scope: Scope, send: Send, error: APIError) -> None:
     """Raw ASGI error response; for a WebSocket handshake, an HTTP denial response before accept."""
@@ -148,7 +187,9 @@ async def send_error(scope: Scope, send: Send, error: APIError) -> None:
         await send({"type": "http.response.start", "status": error.status, "headers": headers})
         await send({"type": "http.response.body", "body": body})
     elif "websocket.http.response" in (scope.get("extensions") or {}):
-        await send({"type": "websocket.http.response.start", "status": error.status, "headers": headers})
+        await send(
+            {"type": "websocket.http.response.start", "status": error.status, "headers": headers}
+        )
         await send({"type": "websocket.http.response.body", "body": body})
     else:  # server without the denial-response extension: refuse the handshake (403)
         await send({"type": "websocket.close", "code": 1008})
@@ -165,7 +206,9 @@ def install_handlers(app: FastAPI) -> None:
     async def _validation(_: Request, exc: RequestValidationError) -> JSONResponse:
         errors = exc.errors()
         loc = errors[0].get("loc", ()) if errors else ()
-        param = ".".join(str(p) for p in loc if p not in ("body", "query", "path", "header")) or None
+        param = (
+            ".".join(str(p) for p in loc if p not in ("body", "query", "path", "header")) or None
+        )
         message = f"Invalid value for '{param}'." if param else "Invalid request."
         return invalid_request("invalid_value", message, param).response()
 
@@ -174,7 +217,13 @@ def install_handlers(app: FastAPI) -> None:
         if exc.status_code == 404:
             return not_found().response()
         if exc.status_code == 405:
-            return APIError(405, "invalid_request_error", "method_not_allowed", "Method not allowed.").response()
-        err = APIError(exc.status_code, "invalid_request_error" if exc.status_code < 500 else "server_error",
-                       "invalid_request" if exc.status_code < 500 else "internal_error", "Request failed.")
+            return APIError(
+                405, "invalid_request_error", "method_not_allowed", "Method not allowed."
+            ).response()
+        err = APIError(
+            exc.status_code,
+            "invalid_request_error" if exc.status_code < 500 else "server_error",
+            "invalid_request" if exc.status_code < 500 else "internal_error",
+            "Request failed.",
+        )
         return err.response()

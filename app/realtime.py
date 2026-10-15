@@ -35,28 +35,56 @@ from starlette.types import Message, Receive, Scope, Send
 
 from app.audio import AudioIngress
 from app.chunking import split
-from app.config import SAMPLE_RATE, Config
+from app.config import Config, SAMPLE_RATE
 from app.engine import EngineWorker
-from app.errors import (APIError, idle_timeout, input_audio_buffer_commit_empty, input_audio_buffer_full,
-                        internal_error, invalid_event, invalid_request, model_not_found, model_not_ready,
-                        request_timeout, send_error, server_busy, session_expired, shutting_down, too_many_pending_items,
-                        unknown_parameter, unsupported_event)
-from app.observability import Metrics, log
+from app.errors import (
+    APIError,
+    idle_timeout,
+    input_audio_buffer_commit_empty,
+    input_audio_buffer_full,
+    internal_error,
+    invalid_event,
+    invalid_request,
+    model_not_found,
+    model_not_ready,
+    request_timeout,
+    send_error,
+    server_busy,
+    session_expired,
+    shutting_down,
+    too_many_pending_items,
+    unknown_parameter,
+    unsupported_event,
+)
+from app.observability import log, Metrics
 from app.scheduler import JobKind, Lane, Scheduler
-from app.transcription import MAX_PARAM_CHARS, MODEL_ID, Joiner, run_chunks, served_models
+from app.transcription import Joiner, MAX_PARAM_CHARS, MODEL_ID, run_chunks, served_models
 
 PCM_RATE = 24000  # audio/pcm: 16-bit little-endian mono at 24 kHz, the only accepted input format
-WS_MAX_BYTES = 2 * 1024 * 1024  # Uvicorn --ws-max-size: one client message (~32 s of base64 audio); larger -> 1009
-OFFLOAD_CHARS = 256 * 1024  # JSON/base64/resample of a larger message runs in a thread (~3 ms per 256 KiB inline)
+WS_MAX_BYTES = (
+    2 * 1024 * 1024
+)  # Uvicorn --ws-max-size: one client message (~32 s of base64 audio); larger -> 1009
+OFFLOAD_CHARS = (
+    256 * 1024
+)  # JSON/base64/resample of a larger message runs in a thread (~3 ms per 256 KiB inline)
 LANGUAGE = "vi"
 
 # Client event types of the pinned GA union (openai 3.31.0 `RealtimeClientEvent`); anything else is invalid.
-CLIENT_EVENT_TYPES = frozenset({
-    "conversation.item.create", "conversation.item.delete", "conversation.item.retrieve",
-    "conversation.item.truncate", "input_audio_buffer.append", "input_audio_buffer.clear",
-    "output_audio_buffer.clear", "input_audio_buffer.commit", "response.cancel", "response.create",
-    "session.update",
-})
+CLIENT_EVENT_TYPES = frozenset(
+    {
+        "conversation.item.create",
+        "conversation.item.delete",
+        "conversation.item.retrieve",
+        "conversation.item.truncate",
+        "input_audio_buffer.append",
+        "input_audio_buffer.clear",
+        "output_audio_buffer.clear",
+        "input_audio_buffer.commit",
+        "response.cancel",
+        "response.create",
+        "session.update",
+    }
+)
 EVENT_FIELDS = {  # supported events -> their fields besides `type` and `event_id` (all required)
     "session.update": ("session",),
     "input_audio_buffer.append": ("audio",),
@@ -67,6 +95,7 @@ QUERY_PARAMS = ("model", "intent")
 
 
 # -- turn buffer --------------------------------------------------------------------------------------------------
+
 
 def samples_bound(samples_in: int) -> int:
     """Upper bound of the 16 kHz samples `samples_in` input samples become (reserved per append)."""
@@ -107,7 +136,7 @@ class TurnBuffer:
     def append(self, pcm: bytes) -> None:
         added = self.check(len(pcm))
         data = self._odd + pcm if self._odd else pcm
-        self._odd = bytes(data[2 * added:])
+        self._odd = bytes(data[2 * added :])
         if added:
             x = np.frombuffer(data, dtype="<i2", count=added).astype(np.float32) / 32768
             out = self._stream.resample_chunk(x)
@@ -127,13 +156,19 @@ class TurnBuffer:
 
 # -- session.update -----------------------------------------------------------------------------------------------
 
+
 def session_object(model: str) -> dict:
     """The full session; optional fields the JS types do not allow as null are omitted (contract §6)."""
-    return {"type": "transcription", "audio": {"input": {
-        "format": {"type": "audio/pcm", "rate": PCM_RATE},
-        "transcription": {"model": model, "language": LANGUAGE},
-        "turn_detection": None,
-    }}}
+    return {
+        "type": "transcription",
+        "audio": {
+            "input": {
+                "format": {"type": "audio/pcm", "rate": PCM_RATE},
+                "transcription": {"model": model, "language": LANGUAGE},
+                "turn_detection": None,
+            }
+        },
+    }
 
 
 def _invalid(path: str, message: str) -> APIError:
@@ -141,7 +176,9 @@ def _invalid(path: str, message: str) -> APIError:
 
 
 def _unsupported(path: str) -> APIError:
-    return invalid_request("unsupported_parameter", "This parameter is not supported by this server.", path)
+    return invalid_request(
+        "unsupported_parameter", "This parameter is not supported by this server.", path
+    )
 
 
 def _object(parent: dict, key: str, path: str, keys: tuple[str, ...]) -> dict:
@@ -171,7 +208,12 @@ def parse_session_update(session: object, current: dict, models: tuple[str, ...]
         raise _unsupported("session.include")
     audio = _object(session, "audio", "session", ("input",))
     p = "session.audio.input"
-    input_ = _object(audio, "input", "session.audio", ("format", "noise_reduction", "transcription", "turn_detection"))
+    input_ = _object(
+        audio,
+        "input",
+        "session.audio",
+        ("format", "noise_reduction", "transcription", "turn_detection"),
+    )
 
     fmt = _object(input_, "format", p, ("type", "rate"))
     if fmt.get("type") in ("audio/pcmu", "audio/pcma"):
@@ -184,12 +226,19 @@ def parse_session_update(session: object, current: dict, models: tuple[str, ...]
     if input_.get("noise_reduction") is not None:
         raise _unsupported(f"{p}.noise_reduction")
     if input_.get("turn_detection") is not None:
-        raise invalid_request("unsupported_turn_detection", "Only turn_detection null (explicit commit) is supported.",
-                              f"{p}.turn_detection")
+        raise invalid_request(
+            "unsupported_turn_detection",
+            "Only turn_detection null (explicit commit) is supported.",
+            f"{p}.turn_detection",
+        )
 
     t = f"{p}.transcription"
-    transcription = _object(input_, "transcription", p, ("delay", "keywords", "language", "languages", "model",
-                                                         "prompt"))
+    transcription = _object(
+        input_,
+        "transcription",
+        p,
+        ("delay", "keywords", "language", "languages", "model", "prompt"),
+    )
     for k in ("delay", "keywords", "languages"):
         if transcription.get(k) is not None:
             raise _unsupported(f"{t}.{k}")
@@ -202,7 +251,9 @@ def parse_session_update(session: object, current: dict, models: tuple[str, ...]
     if language is not None and not isinstance(language, str):
         raise _invalid(f"{t}.language", "'language' must be a string.")
     if language not in (None, LANGUAGE):
-        raise invalid_request("unsupported_language", f"Only language '{LANGUAGE}' is supported.", f"{t}.language")
+        raise invalid_request(
+            "unsupported_language", f"Only language '{LANGUAGE}' is supported.", f"{t}.language"
+        )
     model = transcription.get("model")
     if model is not None and not isinstance(model, str):
         raise _invalid(f"{t}.model", "'model' must be a string.")
@@ -213,6 +264,7 @@ def parse_session_update(session: object, current: dict, models: tuple[str, ...]
 
 
 # -- client events ------------------------------------------------------------------------------------------------
+
 
 def load_event(text: str) -> object:
     try:
@@ -238,7 +290,9 @@ def validate_event(event: object) -> dict:
         raise _invalid("event_id", "'event_id' must be a string.")
     for k in fields:
         if k not in event:
-            raise invalid_request("missing_required_parameter", f"Missing required parameter: '{k}'.", k)
+            raise invalid_request(
+                "missing_required_parameter", f"Missing required parameter: '{k}'.", k
+            )
     if type_ == "input_audio_buffer.append" and not isinstance(event["audio"], str):
         raise _invalid("audio", "'audio' must be a base64 string.")
     return event
@@ -266,6 +320,7 @@ def decode_base64(audio: str) -> bytes:
 
 # -- session ------------------------------------------------------------------------------------------------------
 
+
 class SessionGone(Exception):
     """A send failed: the client disconnected or stopped reading (`outcome`)."""
 
@@ -288,13 +343,17 @@ def _new_id(prefix: str) -> str:
 
 
 class Session:
-    def __init__(self, endpoint: "RealtimeEndpoint", lane: Lane, model: str, receive: Receive, send: Send):
+    def __init__(
+        self, endpoint: "RealtimeEndpoint", lane: Lane, model: str, receive: Receive, send: Send
+    ):
         self._ep, self._lane, self._receive, self._raw_send = endpoint, lane, receive, send
         config = endpoint.config
         self._config = config
         self._session = session_object(model)
         self._buffer = TurnBuffer(int(config.max_turn_seconds * PCM_RATE))
-        self._pending_releases: list[Callable[[], None]] = []  # reservations of the uncommitted turn
+        self._pending_releases: list[
+            Callable[[], None]
+        ] = []  # reservations of the uncommitted turn
         self._queue: asyncio.Queue[Item] = asyncio.Queue()
         self._items: list[Item] = []  # committed, reservations not yet released
         self._unfinished = 0  # committed items without a terminal event
@@ -319,8 +378,12 @@ class Session:
 
     async def send_event(self, type_: str, **fields: object) -> None:
         event = {"type": type_, "event_id": _new_id("event"), **fields}
-        await self._send({"type": "websocket.send",
-                          "text": json.dumps(event, ensure_ascii=False, separators=(",", ":"))})
+        await self._send(
+            {
+                "type": "websocket.send",
+                "text": json.dumps(event, ensure_ascii=False, separators=(",", ":")),
+            }
+        )
 
     async def _send_error(self, e: APIError, event_id: str | None) -> None:
         error = {"type": e.type, "code": e.code, "message": e.message, "param": e.param}
@@ -336,17 +399,24 @@ class Session:
         try:
             await self._send({"type": "websocket.accept"})
             await self.send_event("session.created", session=self._session)
-            tasks = [asyncio.create_task(self._receive_loop(), name="quan-rt-receive"),
-                     asyncio.create_task(self._process_loop(), name="quan-rt-process"),
-                     asyncio.create_task(self._watch_idle(), name="quan-rt-idle")]
+            tasks = [
+                asyncio.create_task(self._receive_loop(), name="quan-rt-receive"),
+                asyncio.create_task(self._process_loop(), name="quan-rt-process"),
+                asyncio.create_task(self._watch_idle(), name="quan-rt-idle"),
+            ]
             remaining = self._started + self._config.max_session_seconds - time.monotonic()
-            done, _ = await asyncio.wait(tasks, timeout=max(remaining, 0), return_when=asyncio.FIRST_COMPLETED)
+            done, _ = await asyncio.wait(
+                tasks, timeout=max(remaining, 0), return_when=asyncio.FIRST_COMPLETED
+            )
             outcome = done.pop().result() if done else "session_expired"
             await self._stop(tasks)
             if outcome in ("idle_timeout", "session_expired"):
                 c = self._config
-                error = (idle_timeout(c.session_idle_timeout_seconds) if outcome == "idle_timeout"
-                         else session_expired(c.max_session_seconds))
+                error = (
+                    idle_timeout(c.session_idle_timeout_seconds)
+                    if outcome == "idle_timeout"
+                    else session_expired(c.max_session_seconds)
+                )
                 await self._send_error(error, None)
                 await self._send({"type": "websocket.close", "code": 1000})
             return outcome
@@ -392,7 +462,9 @@ class Session:
         while True:
             message = await self._receive()
             if message["type"] == "websocket.disconnect":
-                return "disconnected"  # client close, message too big (1009) or server shutdown (1012)
+                return (
+                    "disconnected"  # client close, message too big (1009) or server shutdown (1012)
+                )
             self._last_activity = time.monotonic()
             await self._handle(message.get("text"))
 
@@ -404,12 +476,18 @@ class Session:
                 raise invalid_event("Binary frames are not supported; send JSON text events.")
             raw = await _offload(len(text), load_event, text)
             event_id = client_event_id(raw)
-            if isinstance(raw, dict) and isinstance(raw.get("type"), str) and raw["type"] in CLIENT_EVENT_TYPES:
+            if (
+                isinstance(raw, dict)
+                and isinstance(raw.get("type"), str)
+                and raw["type"] in CLIENT_EVENT_TYPES
+            ):
                 label = raw["type"]
             event = validate_event(raw)
             type_ = event["type"]
             if type_ == "session.update":
-                self._session = parse_session_update(event["session"], self._session, self._ep.models)
+                self._session = parse_session_update(
+                    event["session"], self._session, self._ep.models
+                )
                 await self.send_event("session.updated", session=self._session)
             elif type_ == "input_audio_buffer.append":
                 await self._append(event["audio"])
@@ -421,14 +499,17 @@ class Session:
         except APIError as e:
             await self._send_error(e, event_id)
         finally:
-            self._ep.metrics.inc("realtime_client_events_total", "Realtime client events by type.", type=label)
+            self._ep.metrics.inc(
+                "realtime_client_events_total", "Realtime client events by type.", type=label
+            )
 
     async def _append(self, audio: str) -> None:
         try:
             pcm = await _offload(len(audio), decode_base64, audio)
         except ValueError:  # binascii.Error, or non-ASCII characters
-            raise invalid_request("invalid_audio", "input_audio_buffer.append: audio is not valid base64.",
-                                  "audio") from None
+            raise invalid_request(
+                "invalid_audio", "input_audio_buffer.append: audio is not valid base64.", "audio"
+            ) from None
         added = self._buffer.check(len(pcm))
         if added:
             self._pending_releases.append(self._ep.audio.reserve(samples_bound(added)))
@@ -447,12 +528,24 @@ class Session:
         previous, self._previous_item_id = self._previous_item_id, item.id
         self.committed += 1
         self.audio_s += seconds
-        self._ep.metrics.inc("realtime_audio_seconds_total", "Committed realtime audio.", amount=seconds)
-        await self.send_event("input_audio_buffer.committed", item_id=item.id, previous_item_id=previous)
-        await self.send_event("conversation.item.added", previous_item_id=previous, item={
-            "id": item.id, "object": "realtime.item", "type": "message", "role": "user", "status": "completed",
-            "content": [{"type": "input_audio"}],
-        })
+        self._ep.metrics.inc(
+            "realtime_audio_seconds_total", "Committed realtime audio.", amount=seconds
+        )
+        await self.send_event(
+            "input_audio_buffer.committed", item_id=item.id, previous_item_id=previous
+        )
+        await self.send_event(
+            "conversation.item.added",
+            previous_item_id=previous,
+            item={
+                "id": item.id,
+                "object": "realtime.item",
+                "type": "message",
+                "role": "user",
+                "status": "completed",
+                "content": [{"type": "input_audio"}],
+            },
+        )
         self._queue.put_nowait(item)
 
     def _clear(self) -> None:
@@ -471,7 +564,9 @@ class Session:
             self._last_activity = time.monotonic()
             if self._lane.unfinished:  # a failed item's running job still reads its waveform
                 idle = asyncio.get_running_loop().create_future()
-                self._lane.release_audio_when_idle(lambda: idle.done() or idle.set_result(None))
+                self._lane.release_audio_when_idle(
+                    lambda idle=idle: idle.done() or idle.set_result(None)
+                )
                 await idle
             self._items.remove(item)
             item.wav = None
@@ -486,13 +581,22 @@ class Session:
         try:
             if time.monotonic() >= item.committed_at + c.request_timeout_seconds:
                 raise request_timeout()
-            results = run_chunks(self._lane, item.wav, spans, item.committed_at + c.request_timeout_seconds,
-                                 c.queue_max_jobs_per_lane)
+            results = run_chunks(
+                self._lane,
+                item.wav,
+                spans,
+                item.committed_at + c.request_timeout_seconds,
+                c.queue_max_jobs_per_lane,
+            )
             async with aclosing(results):
                 async for _, result in results:
                     if (delta := joiner.add(result.text)) is not None:
-                        await self.send_event("conversation.item.input_audio_transcription.delta", item_id=item.id,
-                                              content_index=0, delta=delta)
+                        await self.send_event(
+                            "conversation.item.input_audio_transcription.delta",
+                            item_id=item.id,
+                            content_index=0,
+                            delta=delta,
+                        )
         except SessionGone:
             outcome = "disconnected"
             raise
@@ -501,19 +605,36 @@ class Session:
                 log(logging.ERROR, "realtime.item_error", exc_info=True)
                 e = internal_error()
             outcome = e.code
-            await self.send_event("conversation.item.input_audio_transcription.failed", item_id=item.id,
-                                  content_index=0, error={"type": e.type, "code": e.code, "message": e.message})
+            await self.send_event(
+                "conversation.item.input_audio_transcription.failed",
+                item_id=item.id,
+                content_index=0,
+                error={"type": e.type, "code": e.code, "message": e.message},
+            )
         else:
-            await self.send_event("conversation.item.input_audio_transcription.completed", item_id=item.id,
-                                  content_index=0, transcript=joiner.text,
-                                  usage={"type": "duration", "seconds": item.seconds})
-            self._ep.metrics.observe("realtime_commit_to_completed_seconds", "From commit to the completed event.",
-                                     time.monotonic() - item.committed_at)
+            await self.send_event(
+                "conversation.item.input_audio_transcription.completed",
+                item_id=item.id,
+                content_index=0,
+                transcript=joiner.text,
+                usage={"type": "duration", "seconds": item.seconds},
+            )
+            self._ep.metrics.observe(
+                "realtime_commit_to_completed_seconds",
+                "From commit to the completed event.",
+                time.monotonic() - item.committed_at,
+            )
         finally:
             m = self._ep.metrics
             m.inc("realtime_items_total", "Committed realtime items by outcome.", outcome=outcome)
-            log(logging.INFO, "realtime.item", audio_s=round(item.seconds, 3), chunks=len(spans), outcome=outcome,
-                latency_ms=round((time.monotonic() - item.committed_at) * 1000, 1))
+            log(
+                logging.INFO,
+                "realtime.item",
+                audio_s=round(item.seconds, 3),
+                chunks=len(spans),
+                outcome=outcome,
+                latency_ms=round((time.monotonic() - item.committed_at) * 1000, 1),
+            )
 
 
 async def _offload(size: int, fn, *args, **kwargs):
@@ -531,11 +652,18 @@ async def _offload(size: int, fn, *args, **kwargs):
 
 # -- endpoint -----------------------------------------------------------------------------------------------------
 
+
 class RealtimeEndpoint:
     """ASGI app for the WebSocket route `/v1/realtime`."""
 
-    def __init__(self, config: Config, audio: AudioIngress, scheduler: Scheduler, worker: EngineWorker,
-                 metrics: Metrics):
+    def __init__(
+        self,
+        config: Config,
+        audio: AudioIngress,
+        scheduler: Scheduler,
+        worker: EngineWorker,
+        metrics: Metrics,
+    ):
         self.config, self.audio, self.metrics = config, audio, metrics
         self._scheduler, self._worker = scheduler, worker
         self.models = served_models(config)
@@ -548,12 +676,16 @@ class RealtimeEndpoint:
         for name, _ in pairs:
             if name not in QUERY_PARAMS:
                 shown = name[:MAX_PARAM_CHARS] if name.isprintable() else "<invalid>"
-                raise invalid_request("unsupported_parameter", f"Unsupported query parameter: '{shown}'.", shown)
+                raise invalid_request(
+                    "unsupported_parameter", f"Unsupported query parameter: '{shown}'.", shown
+                )
         values = dict(pairs)
         if len(values) != len(pairs):
             raise invalid_request("invalid_value", "Query parameters must be sent once.")
         if values.get("intent", "transcription") != "transcription":
-            raise invalid_request("invalid_value", "Only intent 'transcription' is supported.", "intent")
+            raise invalid_request(
+                "invalid_value", "Only intent 'transcription' is supported.", "intent"
+            )
         model = values.get("model", MODEL_ID)
         if model not in self.models:
             raise model_not_found(model)
@@ -572,7 +704,11 @@ class RealtimeEndpoint:
         try:
             model, lane = self._admit(scope)
         except APIError as e:
-            self.metrics.inc("realtime_sessions_total", "Realtime sessions by outcome.", outcome=f"rejected_{e.code}")
+            self.metrics.inc(
+                "realtime_sessions_total",
+                "Realtime sessions by outcome.",
+                outcome=f"rejected_{e.code}",
+            )
             await send_error(scope, send, e)
             return
         self.sessions += 1
@@ -587,11 +723,27 @@ class RealtimeEndpoint:
             log(logging.ERROR, "realtime.unhandled_error", exc_info=True)
         finally:
             self.sessions -= 1
-            self.metrics.inc("realtime_sessions_total", "Realtime sessions by outcome.", outcome=outcome)
-            log(logging.INFO, "realtime.session", outcome=outcome, items=session.committed,
-                audio_s=round(session.audio_s, 3), duration_s=round(time.monotonic() - started, 3))
+            self.metrics.inc(
+                "realtime_sessions_total", "Realtime sessions by outcome.", outcome=outcome
+            )
+            log(
+                logging.INFO,
+                "realtime.session",
+                outcome=outcome,
+                items=session.committed,
+                audio_s=round(session.audio_s, 3),
+                duration_s=round(time.monotonic() - started, 3),
+            )
 
 
-def install(app: FastAPI, config: Config, audio: AudioIngress, scheduler: Scheduler, worker: EngineWorker,
-            metrics: Metrics) -> None:
-    app.router.add_websocket_route("/v1/realtime", RealtimeEndpoint(config, audio, scheduler, worker, metrics))
+def install(
+    app: FastAPI,
+    config: Config,
+    audio: AudioIngress,
+    scheduler: Scheduler,
+    worker: EngineWorker,
+    metrics: Metrics,
+) -> None:
+    app.router.add_websocket_route(
+        "/v1/realtime", RealtimeEndpoint(config, audio, scheduler, worker, metrics)
+    )

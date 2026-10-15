@@ -22,6 +22,7 @@ import os
 import statistics
 import sys
 from collections.abc import Sequence
+from itertools import pairwise
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -41,8 +42,9 @@ def match(ref: Sequence[dict], hyp: Sequence[dict]) -> list[tuple[dict, dict]]:
     for i, r in enumerate(ref, 1):
         row = [i]
         for j, h in enumerate(hyp, 1):
-            row.append(min(d[i - 1][j] + 1, row[j - 1] + 1,
-                           d[i - 1][j - 1] + (r["word"] != h["word"])))
+            row.append(
+                min(d[i - 1][j] + 1, row[j - 1] + 1, d[i - 1][j - 1] + (r["word"] != h["word"]))
+            )
         d.append(row)
     pairs = []
     i, j = len(ref), len(hyp)
@@ -60,8 +62,9 @@ def match(ref: Sequence[dict], hyp: Sequence[dict]) -> list[tuple[dict, dict]]:
 
 
 def valid(hyp: Sequence[dict], duration: float) -> bool:
-    return (all(0 <= w["start"] < w["end"] <= duration for w in hyp)
-            and all(a["start"] <= b["start"] for a, b in zip(hyp, hyp[1:])))
+    return all(0 <= w["start"] < w["end"] <= duration for w in hyp) and all(
+        a["start"] <= b["start"] for a, b in pairwise(hyp)
+    )
 
 
 def score(utterances: Sequence[tuple[Sequence[dict], Sequence[dict], float]]) -> dict:
@@ -78,8 +81,11 @@ def score(utterances: Sequence[tuple[Sequence[dict], Sequence[dict], float]]) ->
             de.append(abs(h["end"] - r["end"]))
     n = len(ds)
     out = {
-        "utterances": len(utterances), "reference_words": ref_words, "hypothesis_words": hyp_words,
-        "matched_words": n, "unmatched_reference_share": round(1 - n / ref_words, 4) if ref_words else None,
+        "utterances": len(utterances),
+        "reference_words": ref_words,
+        "hypothesis_words": hyp_words,
+        "matched_words": n,
+        "unmatched_reference_share": round(1 - n / ref_words, 4) if ref_words else None,
         "all_spans_valid_and_monotonic": all_valid,
     }
     timing_passed = False
@@ -87,8 +93,12 @@ def score(utterances: Sequence[tuple[Sequence[dict], Sequence[dict], float]]) ->
         start_within = sum(d <= TOLERANCE_S for d in ds) / n
         end_within = sum(d <= TOLERANCE_S for d in de) / n
         start_median, end_median = statistics.median(ds), statistics.median(de)
-        timing_passed = (start_within >= MIN_WITHIN and end_within >= MIN_WITHIN
-                         and start_median <= MAX_MEDIAN_S and end_median <= MAX_MEDIAN_S)
+        timing_passed = (
+            start_within >= MIN_WITHIN
+            and end_within >= MIN_WITHIN
+            and start_median <= MAX_MEDIAN_S
+            and end_median <= MAX_MEDIAN_S
+        )
         out |= {
             "start_within_100ms": round(start_within, 4),
             "end_within_100ms": round(end_within, 4),
@@ -102,8 +112,12 @@ def score(utterances: Sequence[tuple[Sequence[dict], Sequence[dict], float]]) ->
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--models-dir", type=Path, default=Path(os.environ.get("QUAN_MODELS_DIR", ROOT / "models")))
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    ap.add_argument(
+        "--models-dir", type=Path, default=Path(os.environ.get("QUAN_MODELS_DIR", ROOT / "models"))
+    )
     ap.add_argument("--annotations", type=Path, default=ANNOTATIONS)
     ap.add_argument("--max-chunk-seconds", type=float, default=30.0)
     ap.add_argument("--out", type=Path)
@@ -134,15 +148,24 @@ def main() -> int:
         x, sr = sf.read(audio, dtype="float32")
         if sr != 16000 or x.ndim != 1:
             raise SystemExit(f"{path.name}: audio must be 16 kHz mono")
-        chunks = [(s, engine.transcribe(x[s.start:s.end])) for s in split(x, max_chunk)]
-        hyp = [{"word": w.text, "start": seconds(w.start), "end": seconds(w.end)} for w in align(chunks, pieces)]
+        chunks = [(s, engine.transcribe(x[s.start : s.end])) for s in split(x, max_chunk)]
+        hyp = [
+            {"word": w.text, "start": seconds(w.start), "end": seconds(w.end)}
+            for w in align(chunks, pieces)
+        ]
         by_split.setdefault(ann["split"], []).append((ann["words"], hyp, len(x) / sr))
 
-    report = {"annotations": [p.name for p in files],
-              "thresholds": {"tolerance_ms": TOLERANCE_S * 1000, "min_within": MIN_WITHIN,
-                             "max_median_ms": MAX_MEDIAN_S * 1000, "min_words": MIN_WORDS,
-                             "min_utterances": MIN_UTTERANCES},
-              "splits": {name: score(u) for name, u in sorted(by_split.items())}}
+    report = {
+        "annotations": [p.name for p in files],
+        "thresholds": {
+            "tolerance_ms": TOLERANCE_S * 1000,
+            "min_within": MIN_WITHIN,
+            "max_median_ms": MAX_MEDIAN_S * 1000,
+            "min_words": MIN_WORDS,
+            "min_utterances": MIN_UTTERANCES,
+        },
+        "splits": {name: score(u) for name, u in sorted(by_split.items())},
+    }
     passed = report["splits"].get("test", {}).get("gate_passed", False)
     report["gate_passed"] = passed
     text = json.dumps(report, indent=2) + "\n"

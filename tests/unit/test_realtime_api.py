@@ -14,7 +14,7 @@ from websockets.sync.client import connect
 from app.realtime import WS_MAX_BYTES
 from app.transcription import MODEL_ID
 from tests.fake_engine import FakeEngine
-from tests.live_server import WS, AUTH, expected_turn, name, noise, pcm24, serve, wait_for, wav_file
+from tests.live_server import AUTH, expected_turn, name, noise, pcm24, serve, wait_for, wav_file, WS
 
 CHUNK = 1.0  # max_chunk_seconds: turns over 1 s become several chunks of one item
 
