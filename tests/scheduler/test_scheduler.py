@@ -456,3 +456,25 @@ async def test_blocked_warmup_marks_worker_unhealthy(recovery):
         engine.warmup_gate.set()
         await scheduler.close(1)
         assert worker.stop(1)
+
+
+@run_async
+async def test_release_audio_when_idle_runs_every_callback_once_after_running_job():
+    """A realtime session registers several reservations (items, pending turn) on one lane (m5-design B11)."""
+    engine = FakeEngine()
+    engine.gate.clear()
+    async with serving(engine) as (scheduler, _, _):
+        lane = scheduler.open_lane(LIVE)
+        job = await lane.submit(wav(1))
+        await call_started(engine)
+        lane.close()
+        released = []
+        lane.release_audio_when_idle(lambda: released.append("a"))
+        lane.release_audio_when_idle(lambda: released.append("b"))
+        await asyncio.sleep(0.05)
+        assert released == [] and job.future.cancelled()  # the call still runs on the audio
+        engine.gate.set()
+        await wait_until(lambda: scheduler._jobs == 0)
+        assert released == ["a", "b"]
+        lane.release_audio_when_idle(lambda: released.append("c"))  # idle: at once
+        assert released == ["a", "b", "c"]

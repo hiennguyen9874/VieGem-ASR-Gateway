@@ -118,12 +118,69 @@ const serverEvents = [
       event_id: 'client_evt_5',
     },
   },
+  { type: 'input_audio_buffer.committed', event_id: 'event_0010', item_id: 'item_0002', previous_item_id: 'item_0001' },
+  {
+    type: 'conversation.item.added',
+    event_id: 'event_0011',
+    previous_item_id: 'item_0001',
+    item: {
+      id: 'item_0002',
+      object: 'realtime.item',
+      type: 'message',
+      role: 'user',
+      status: 'completed',
+      content: [{ type: 'input_audio' }],
+    },
+  },
   {
     type: 'conversation.item.input_audio_transcription.failed',
-    event_id: 'event_0010',
+    event_id: 'event_0012',
     item_id: 'item_0002',
     content_index: 0,
-    error: { type: 'server_error', code: 'inference_failed', message: 'Transcription failed for this item.' },
+    error: { type: 'server_error', code: 'inference_failed', message: 'Inference failed.' },
+  },
+  {
+    type: 'error',
+    event_id: 'event_0013',
+    error: {
+      type: 'invalid_request_error',
+      code: 'unknown_parameter',
+      message: 'Unknown parameter.',
+      param: 'session.audio.input.foo',
+      event_id: 'client_evt_6',
+    },
+  },
+  {
+    type: 'error',
+    event_id: 'event_0014',
+    error: {
+      type: 'invalid_request_error',
+      code: 'input_audio_buffer_commit_empty',
+      message: 'Input audio buffer is empty.',
+      param: null,
+      event_id: 'client_evt_7',
+    },
+  },
+  {
+    type: 'error',
+    event_id: 'event_0015',
+    error: {
+      type: 'rate_limit_error',
+      code: 'server_busy',
+      message: 'Server is busy, retry later.',
+      param: null,
+      event_id: 'client_evt_8',
+    },
+  },
+  {
+    type: 'error',
+    event_id: 'event_0016',
+    error: {
+      type: 'invalid_request_error',
+      code: 'idle_timeout',
+      message: 'No client event for 120 seconds; closing the session.',
+      param: null,
+    },
   },
 ] satisfies RealtimeServerEvent[];
 

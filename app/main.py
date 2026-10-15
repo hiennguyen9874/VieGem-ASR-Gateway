@@ -7,7 +7,6 @@ Run with one worker process per GPU (the model instance lives in this process):
 import asyncio
 import hashlib
 import hmac
-import json
 import logging
 import time
 import uuid
@@ -21,10 +20,12 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 from app.audio import AudioIngress
 from app.config import Config, ConfigError
 from app.engine import Engine, EngineWorker, QuanEngine
-from app.errors import APIError, install_handlers, internal_error, invalid_api_key, model_not_ready, shutting_down
+from app.errors import (APIError, install_handlers, internal_error, invalid_api_key, model_not_ready, send_error,
+                        shutting_down)
 from app.observability import Metrics, configure_logging, log, request_id
 from app.scheduler import Scheduler
 from app.schemas import Status
+from app.realtime import install as install_realtime
 from app.transcription import install as install_transcription
 
 PUBLIC_PATHS = frozenset({"/health", "/ready"})  # probes; everything else needs an API key
@@ -72,6 +73,7 @@ def create_app(config: Config | None = None, engine: Engine | None = None) -> Fa
     app.state.audio = audio
     install_handlers(app)
     install_transcription(app, config, audio, scheduler, worker, metrics)
+    install_realtime(app, config, audio, scheduler, worker, metrics)
     app.add_middleware(GatewayMiddleware, api_keys=config.api_keys, metrics=metrics)
 
     @app.get("/health", response_model=Status)
@@ -132,18 +134,19 @@ class GatewayMiddleware:
                 MutableHeaders(scope=message).append("x-request-id", rid)
             elif message["type"] == "websocket.accept":
                 status = 101
+                message.setdefault("headers", [])  # optional in ASGI
                 MutableHeaders(scope=message).append("x-request-id", rid)
             await send(message)
 
         try:
             if scope["path"] not in PUBLIC_PATHS and not self._authorized(scope):
-                await _send_error(scope, send_with_id, invalid_api_key())
+                await send_error(scope, send_with_id, invalid_api_key())
             else:
                 await self._app(scope, receive, send_with_id)
         except Exception:
             log(logging.ERROR, "http.unhandled_error", exc_info=True, path=scope["path"][:200])
             if status is None:
-                await _send_error(scope, send_with_id, internal_error())
+                await send_error(scope, send_with_id, internal_error())
         finally:
             duration = time.monotonic() - started
             self._metrics.inc("http_requests_total", "HTTP requests and WebSocket handshakes by status.",
@@ -152,17 +155,3 @@ class GatewayMiddleware:
             log(logging.INFO, "http.request", method=scope.get("method", "WS"), path=scope["path"][:200],
                 status=status, duration_ms=round(duration * 1000, 1))
             request_id.reset(token)
-
-
-async def _send_error(scope: Scope, send: Send, error: APIError) -> None:
-    body = json.dumps(error.body()).encode()
-    headers = [(b"content-type", b"application/json"), (b"content-length", str(len(body)).encode())]
-    headers += [(k.lower().encode(), v.encode()) for k, v in error.headers.items()]
-    if scope["type"] == "http":
-        await send({"type": "http.response.start", "status": error.status, "headers": headers})
-        await send({"type": "http.response.body", "body": body})
-    elif "websocket.http.response" in (scope.get("extensions") or {}):
-        await send({"type": "websocket.http.response.start", "status": error.status, "headers": headers})
-        await send({"type": "websocket.http.response.body", "body": body})
-    else:  # server without the denial-response extension: refuse the handshake (403)
-        await send({"type": "websocket.close", "code": 1008})

@@ -138,9 +138,19 @@ Kết quả:
 
 ## 6. Realtime WebSocket `/v1/realtime` (R3a)
 
-Kết nối: `GET /v1/realtime` (WebSocket), `Authorization: Bearer <key>` (server-to-server). Query `model` tùy chọn
-(SDK `client.realtime.connect(model=…)` gửi `?model=`); nếu có thì phải là model phục vụ. Auth sai hoặc model sai →
-từ chối handshake (401 / 404), không accept rồi mới báo lỗi. Không hỗ trợ subprotocol `openai-insecure-api-key.*`.
+Kết nối: `GET /v1/realtime` (WebSocket), `Authorization: Bearer <key>` (server-to-server). Query tùy chọn, mỗi
+tham số tối đa một lần: `model` (Python SDK `client.realtime.connect(model=…)`) phải là model phục vụ, là model ban
+đầu của session; `intent=transcription` (JS SDK `OpenAIRealtimeWS({intent: "transcription"})`). Mọi lỗi handshake là
+HTTP response **trước accept** (có `x-request-id`, envelope §7), theo thứ tự: auth sai → 401; tham số query khác (kể
+cả `call_id`) → 400 `unsupported_parameter`; tham số lặp → 400 `invalid_value`; `intent` khác → 400
+`invalid_value`; model không phục vụ → 404 `model_not_found`; đang drain → 503 `shutting_down`; chưa ready → 503
+`model_not_ready`; đủ `QUAN_MAX_SESSIONS` session hoặc hết lane → 429 `server_busy` (`Retry-After: 1`). Cả hai SDK
+báo lỗi handshake (Python: `websockets.exceptions.InvalidStatus` với `response.status_code`; JS: event `error`
+"Unexpected server response: <status>"). Không hỗ trợ subprotocol `openai-insecure-api-key.*`.
+
+JS SDK luôn kết nối bằng `wss:` (kể cả `buildRealtimeURL` tùy chỉnh): client JS cần TLS (reverse proxy hoặc Uvicorn
+`--ssl-*`). Một message client tối đa 2 MiB (Uvicorn `--ws-max-size 2097152`, ≈ 32 s audio mỗi append); lớn hơn →
+server đóng socket với code 1009. Message dạng binary → `error` `invalid_event`.
 
 Session sau khi accept (server gửi `session.created` ngay):
 
@@ -153,11 +163,16 @@ Client events:
 
 | Event | Quy tắc |
 |---|---|
-| `session.update` | `session.type` phải là `transcription`. Field không gửi = giữ nguyên. Chấp nhận: `format` = `audio/pcm` rate 24000; `transcription.model` = model phục vụ; `transcription.language` = `vi`; `turn_detection: null`. Từ chối (event `error`, session không đổi): `pcmu`/`pcma`, `turn_detection` khác null, `noise_reduction` khác null, `prompt` không rỗng, `keywords`, `languages`, `delay`, `include`. Đổi format khi buffer còn audio → lỗi. Thành công → `session.updated` với session đầy đủ |
-| `input_audio_buffer.append` | `audio` = base64 PCM16 little-endian mono 24 kHz. Base64 sai → `error` `invalid_audio`. Byte lẻ giữ lại cho packet sau. Vượt giới hạn buffer → `error` `input_audio_buffer_full` |
-| `input_audio_buffer.commit` | Buffer 0 byte → `error` `input_audio_buffer_commit_empty`, không tạo item. Ngược lại tạo item mới, buffer mới rỗng ngay; quá số item đang chờ inference → `error` `too_many_pending_items` |
-| `input_audio_buffer.clear` | Chỉ xóa pending audio, không ảnh hưởng item đã commit → `input_audio_buffer.cleared` |
-| Loại khác (`response.create`, `conversation.item.create`, …) | `error` `unsupported_event`; type không tồn tại / JSON sai → `error` `invalid_event` |
+| `session.update` | Field vắng mặt hoặc `null` = giữ nguyên. Chấp nhận: `session.type` = `transcription` (bắt buộc); `format` = `{"type": "audio/pcm", "rate": 24000}` (cả hai field tùy chọn); `transcription.model` = model phục vụ; `transcription.language` = `vi`; `transcription.prompt` rỗng; `turn_detection`/`noise_reduction` = `null`. Từ chối (event `error`, session **không đổi gì**, kể cả khi phần khác hợp lệ), `param` = đường dẫn chấm (vd. `session.audio.input.turn_detection`): key lạ → `unknown_parameter`; sai kiểu JSON, `session.type` khác, format type/rate khác → `invalid_value`; `audio/pcmu`/`audio/pcma`, `noise_reduction`, `prompt` không rỗng, `keywords`, `languages`, `delay`, `include` → `unsupported_parameter`; `turn_detection` khác null → `unsupported_turn_detection`; language khác → `unsupported_language`; model không phục vụ → `model_not_found`. Chỉ có một format nên không có trường hợp "đổi format khi buffer còn audio". Thành công → `session.updated` với session đầy đủ |
+| `input_audio_buffer.append` | `audio` (bắt buộc, `missing_required_parameter`; không phải chuỗi → `invalid_value`) = base64 PCM16 little-endian mono 24 kHz. Base64 sai (ký tự lạ, padding sai) → `error` `invalid_audio` (`param: "audio"`). Byte lẻ giữ lại cho packet sau. Buffer vượt `QUAN_MAX_TURN_SECONDS` (120 s) → `error` `input_audio_buffer_full`; hết budget RAM audio toàn server (`QUAN_MAX_DECODED_SECONDS`) → `error` `server_busy` (`type: "rate_limit_error"`). Mọi lỗi: **toàn bộ** append bị bỏ, buffer không đổi. Thành công: không có event (như OpenAI) |
+| `input_audio_buffer.commit` | Buffer rỗng = 0 mẫu nguyên (một byte lẻ vẫn là rỗng) → `error` `input_audio_buffer_commit_empty`, không tạo item, buffer giữ nguyên. Đã có `QUAN_MAX_PENDING_ITEMS` (4) item chưa có `completed`/`failed` → `error` `too_many_pending_items`, buffer **giữ nguyên** (commit lại sau). Ngược lại: byte lẻ cuối bị bỏ, tạo item mới, buffer mới rỗng ngay (turn kế tiếp nhận được trong lúc item trước đang infer). Turn ≤ 100 ms (≤ 2,400 mẫu 24 kHz) → item bình thường, `completed` với `transcript: ""` và usage thật, không gọi model (như REST §4) |
+| `input_audio_buffer.clear` | Xóa pending audio (kể cả byte lẻ), không ảnh hưởng item đã commit → `input_audio_buffer.cleared` |
+| Type khác trong union client GA (`response.create`, `conversation.item.create`, `output_audio_buffer.clear`, …) | `error` `unsupported_event` (`param: "type"`). JSON sai / không phải object → `invalid_event`; thiếu `type` hoặc type ngoài union GA (kể cả beta `transcription_session.update`) → `invalid_event` (`param: "type"`); field lạ trong event → `unknown_parameter`; `event_id` không phải chuỗi → `invalid_value`. Lỗi event không đóng socket |
+
+Audio: PCM16 / 32768 → float32, resample 24 → 16 kHz bằng soxr HQ dạng stream khi append; waveform commit **bằng
+tuyệt đối** soxr one-shot trên cả turn (cùng resampler `quan_transcribe` dùng), độc lập cách chia packet. Text có thể
+khác REST trên cùng file (FFmpeg resampler, quantize PCM16, ranh giới turn do client chọn). Turn dài hơn
+`QUAN_MAX_CHUNK_SECONDS` được chia chunk như REST (§4): nhiều delta, cùng một item.
 
 Server events cho mỗi commit, theo thứ tự trong cùng item:
 
@@ -176,11 +191,25 @@ Quy tắc chung:
   đó trong cùng session hoặc `null`.
 - `usage.seconds` = thời lượng audio đã commit (byte / 2 / 24000). Trường `usage` là **bắt buộc** trong type SDK
   của `completed`; không bao giờ phát `usage` dạng `tokens`.
-- Completed của các item khác nhau có thể không theo thứ tự commit (OpenAI cũng không đảm bảo); client ghép bằng
-  `item_id`. `completed.transcript` là kết quả authoritative.
+- Server này xử lý item theo thứ tự commit (FIFO, item sau bắt đầu khi item trước terminal), nên terminal event đi
+  theo thứ tự commit; client vẫn nên ghép bằng `item_id` (OpenAI không đảm bảo thứ tự). Delta/terminal của item trước
+  có thể xen giữa `committed`/`added` của item sau. `completed.transcript` là kết quả authoritative.
+- Deadline mỗi item = lúc commit + `QUAN_REQUEST_TIMEOUT_SECONDS`. `failed.error.code`: `inference_failed`,
+  `request_timeout`, `server_busy` (queue đầy), `model_not_ready`, `shutting_down`, `internal_error`. Delta đã gửi
+  không bị thu hồi; session tiếp tục sau `failed`.
+- Đóng session: không có event client và không có item đang chờ trong `QUAN_SESSION_IDLE_TIMEOUT_SECONDS` →
+  `error` `idle_timeout` rồi close 1000; quá `QUAN_MAX_SESSION_SECONDS` → `error` `session_expired` rồi close 1000
+  (item chưa xong và pending audio bị bỏ). Client không đọc (một lần gửi quá `QUAN_SEND_TIMEOUT_SECONDS`) hoặc ngắt:
+  session kết thúc không gửi gì thêm, chunk đang chờ bị hủy, kết quả chunk đang chạy bị bỏ. Server restart/shutdown:
+  Uvicorn đóng mọi socket với 1012 ngay, item chưa `completed` bị mất — client phải kết nối lại và gửi lại audio.
 - Không phát `conversation.item.done`, `input_audio_buffer.speech_started/stopped` (R3b), `response.*`,
   `rate_limits.updated`. Không có partial trước commit.
-- `error` event: `{"type": "error", "event_id", "error": {"type", "code", "message", "param", "event_id": <event_id client gửi, nếu có>}}`.
+- `error` event: `{"type": "error", "event_id", "error": {"type", "code", "message", "param", "event_id"}}`; `param`
+  có thể `null`; `error.event_id` = `event_id` của event client gây lỗi, chỉ khi đó là chuỗi printable ≤ 64 ký tự
+  (ngược lại bỏ hẳn field). Mã `error` của gateway: `invalid_event`, `unsupported_event`, `unknown_parameter`,
+  `missing_required_parameter`, `invalid_value`, `unsupported_parameter`, `unsupported_turn_detection`,
+  `unsupported_language`, `model_not_found`, `invalid_audio`, `input_audio_buffer_full`,
+  `input_audio_buffer_commit_empty`, `too_many_pending_items`, `server_busy`, `idle_timeout`, `session_expired`.
 - **Không gửi `null`** cho field optional mà type JS không cho null: bỏ hẳn `noise_reduction` và
   `content[].transcript` (JS type check bắt được hai lỗi này; Python SDK thì chấp nhận null).
 
@@ -229,8 +258,10 @@ uv run pytest tests/contract tests/unit
 ```
 
 `tests/contract/test_server_sdk.py` chạy gateway thật (Uvicorn + FFmpeg, fake engine): payload có cùng key/type với
-`examples/`, Python SDK parse được, và chạy `js/server.test.ts` (JS SDK) với `QUAN_TEST_BASE_URL`,
-`QUAN_TEST_API_KEY`, `QUAN_TEST_AUDIO_DIR`; `npm test` đơn lẻ bỏ qua các test đó.
+`examples/`, Python SDK parse được (Realtime: `client.realtime.connect`, mọi server event validate bằng union
+pydantic), và chạy `js/server.test.ts` (JS SDK) với `QUAN_TEST_BASE_URL`, `QUAN_TEST_API_KEY`, `QUAN_TEST_AUDIO_DIR`,
+cùng `QUAN_TEST_WSS_BASE_URL` + `QUAN_TEST_CA` (gateway TLS cert tự ký cho `OpenAIRealtimeWS`); `npm test` đơn lẻ bỏ
+qua các test đó.
 
 Khi đổi version SDK: cập nhật pin trong `pyproject.toml`/`tests/contract/js/package.json`, chạy lại cả hai, ghi lại
 thay đổi schema ở tài liệu này. Khi gateway được triển khai (M3/M5), test tích hợp phải gọi server thật và so sánh

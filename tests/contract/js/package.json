@@ -6,8 +6,10 @@
     "test": "tsc --noEmit -p . && node --test"
   },
   "devDependencies": {
+    "@types/node": "24.10.1",
+    "@types/ws": "8.18.2",
     "openai": "7.33.0",
     "typescript": "5.9.3",
-    "@types/node": "24.10.1"
+    "ws": "8.22.0"
   }
 }

@@ -1,10 +1,12 @@
 """The real gateway (Uvicorn + FFmpeg, fake engine) returns the payload shapes of tests/contract/examples/, and both
-pinned SDKs parse them: Python here, JS via `js/server.test.ts` (run against a gateway this module starts).
+pinned SDKs parse them: Python here, JS via `js/server.test.ts` (run against gateways this module starts: plain HTTP
+for REST, HTTPS/WSS with a self-signed certificate for Realtime, since the JS realtime client only uses `wss:`).
 
 The fake engine fails any chunk whose mean is below FAIL_MEAN, so `fail.wav` (quiet noise, then a loud constant)
 streams at least one delta before an inference error.
 """
 
+import base64
 import json
 import os
 import shutil
@@ -13,12 +15,16 @@ from pathlib import Path
 
 import numpy as np
 import openai
+import pydantic
 import pytest
+from openai.types.realtime import RealtimeServerEvent
+from websockets.exceptions import InvalidStatus
 
 from app.chunking import split
 from app.transcription import MODEL_ID
 from tests.fake_engine import FakeEngine
-from tests.live_server import KEY, SR, expected_deltas, name, noise, parse_cues, serve, wait_for, wav_file
+from tests.live_server import (KEY, SR, expected_deltas, expected_turn, name, noise, parse_cues, pcm24, serve,
+                               wait_for, wav_file)
 
 EXAMPLES = Path(__file__).parent / "examples"
 JS = Path(__file__).parent / "js"
@@ -53,8 +59,13 @@ def audio(tmp_path) -> Path:
     wav_file(tmp_path / "speech.wav", speech)
     wav_file(tmp_path / "fail.wav", fail)
     deltas = expected_deltas(speech, CHUNK_SECONDS)
+    turns = []
+    for i, seconds in enumerate((2.5, 0.8)):  # realtime turns: several chunks, then one
+        pcm = pcm24(seconds, seed=30 + i)
+        (tmp_path / f"turn{i}.pcm").write_bytes(pcm)
+        turns.append({"deltas": expected_turn(pcm, CHUNK_SECONDS), "seconds": len(pcm) / 2 / 24000})
     (tmp_path / "expected.json").write_text(json.dumps(
-        {"text": "".join(deltas), "deltas": deltas, "seconds": len(speech) / SR}))
+        {"text": "".join(deltas), "deltas": deltas, "seconds": len(speech) / SR, "turns": turns}))
     return tmp_path
 
 
@@ -139,12 +150,81 @@ def test_python_sdk(srv, audio):
     assert (e.value.code, e.value.type) == ("inference_failed", "server_error")
 
 
-def test_js_sdk(srv, audio):
+def realtime_shapes(event: dict) -> None:
+    """A server event has the keys and JSON types of one example of its type (null and string are told apart)."""
+    examples = [e for e in (json.loads(line) for line in (EXAMPLES / "realtime_server.jsonl").read_text().splitlines())
+                if e["type"] == event["type"]]
+    assert examples, event["type"]
+    assert shape(event) in [shape(e) for e in examples], event
+
+
+def test_python_sdk_realtime(srv, audio):
+    expected = json.loads((audio / "expected.json").read_text())
+    adapter = pydantic.TypeAdapter(RealtimeServerEvent)
+    received = []
+
+    def recv(conn) -> dict:
+        raw = json.loads(conn.recv_bytes())
+        event = adapter.validate_python(raw)  # strict validation, not just construction
+        assert event.model_dump(exclude_unset=True) == raw
+        realtime_shapes(raw)
+        assert conn.parse_event(json.dumps(raw)).type == raw["type"]
+        received.append(raw)
+        return raw
+
+    def until(conn, type_: str) -> list[dict]:
+        got = [recv(conn)]
+        while got[-1]["type"] != type_:
+            got.append(recv(conn))
+        return got
+
+    with srv.sdk.realtime.connect(model=MODEL_ID) as conn:
+        created = recv(conn)
+        assert created["type"] == "session.created"
+        conn.session.update(session=created["session"])
+        assert recv(conn)["type"] == "session.updated"
+        previous = None
+        for i, turn in enumerate(expected["turns"]):
+            pcm = (audio / f"turn{i}.pcm").read_bytes()
+            for j in range(0, len(pcm), 4801):  # 100 ms packets, split samples
+                conn.input_audio_buffer.append(audio=base64.b64encode(pcm[j:j + 4801]).decode())
+            conn.input_audio_buffer.commit()
+            events = until(conn, "conversation.item.input_audio_transcription.completed")
+            committed, added, *deltas, done = events
+            assert [committed["type"], added["type"]] == ["input_audio_buffer.committed", "conversation.item.added"]
+            assert committed["previous_item_id"] == added["previous_item_id"] == previous
+            assert [d["delta"] for d in deltas] == turn["deltas"] and done["transcript"] == "".join(turn["deltas"])
+            assert done["usage"] == {"type": "duration", "seconds": turn["seconds"]}
+            previous = committed["item_id"]
+        conn.input_audio_buffer.append(audio=base64.b64encode(b"\0" * 960).decode())
+        conn.input_audio_buffer.clear()
+        assert recv(conn)["type"] == "input_audio_buffer.cleared"
+        conn.input_audio_buffer.commit(event_id="client_evt_7")
+        err = recv(conn)
+        assert err["error"]["code"] == "input_audio_buffer_commit_empty" and err["error"]["event_id"] == "client_evt_7"
+        conn.send({"type": "input_audio_buffer.append", "event_id": "client_evt_5", "audio": "not base64!"})
+        assert recv(conn)["error"]["code"] == "invalid_audio"
+    assert {e["type"] for e in received} >= {e["type"] for e in map(json.loads, (EXAMPLES / "realtime_server.jsonl")
+                                                                     .read_text().splitlines())} - {
+        "conversation.item.input_audio_transcription.failed"}
+    with pytest.raises(InvalidStatus) as e, srv.sdk.realtime.connect(model="whisper-1"):
+        pass
+    assert e.value.response.status_code == 404
+
+
+@pytest.fixture
+def srv_tls(tmp_path):
+    with serve(FakeEngine(text_fn=text_fn), max_chunk_seconds=CHUNK_SECONDS, tls_dir=tmp_path) as s:
+        yield s
+
+
+def test_js_sdk(srv, srv_tls, audio):
     node = shutil.which("node")
     if node is None or not (JS / "node_modules").is_dir():
         pytest.skip("needs node and `npm ci` in tests/contract/js")
     env = {**os.environ, "QUAN_TEST_BASE_URL": srv.base_url + "/v1", "QUAN_TEST_API_KEY": KEY,
-           "QUAN_TEST_AUDIO_DIR": str(audio)}
+           "QUAN_TEST_AUDIO_DIR": str(audio), "QUAN_TEST_WSS_BASE_URL": srv_tls.base_url + "/v1",
+           "QUAN_TEST_CA": str(srv_tls.ca)}
     r = subprocess.run([node, "--test", "--test-reporter=tap", "server.test.ts"], cwd=JS, env=env, capture_output=True, text=True,
                        timeout=120)
     assert r.returncode == 0, r.stdout + r.stderr

@@ -130,14 +130,16 @@ Thiết kế + số đo P0: [m4-design.vi.md](m4-design.vi.md). CPU: `tests/unit
 
 ### M5 — Realtime explicit commit (P1, sau R1; độc lập M4)
 
-- [ ] `app/realtime.py`: pin GA session schema; session created/update/updated, unknown-event error, model validation và authentication trước accept theo contract.
-- [ ] PCM16 little-endian mono 24 kHz; base64 validation, giữ byte lẻ qua append packets; stateful soxr 24→16 kHz, flush tail ở commit và reset đúng ở clear.
-- [ ] Mỗi session có pending audio riêng và committed item immutable. Chốt empty/too-short commit policy, max turn duration và limit committed items pending inference.
-- [ ] Commit snapshot/resampler rồi tạo buffer mới để nhận turn tiếp; clear chỉ xóa pending. Không đổi format/rate khi pending audio tồn tại nếu chưa có semantics an toàn.
-- [ ] Emit committed/item/transcription events với event IDs, item IDs, content index, ordering/previous-item linkage và usage đúng pinned schema. Item nhiều chunk vẫn giữ cùng item; completed là transcript authoritative.
-- [ ] Receiver/sender tách inference, bounded outbound queue, idle/send/session timeouts; session disconnect không hủy GPU ownership sớm.
+- [x] `app/realtime.py`: pin GA session schema; session created/update/updated, unknown-event error, model validation và authentication trước accept theo contract.
+- [x] PCM16 little-endian mono 24 kHz; base64 validation, giữ byte lẻ qua append packets; stateful soxr 24→16 kHz, flush tail ở commit và reset đúng ở clear.
+- [x] Mỗi session có pending audio riêng và committed item immutable. Chốt empty/too-short commit policy, max turn duration và limit committed items pending inference.
+- [x] Commit snapshot/resampler rồi tạo buffer mới để nhận turn tiếp; clear chỉ xóa pending. Không đổi format/rate khi pending audio tồn tại nếu chưa có semantics an toàn.
+- [x] Emit committed/item/transcription events với event IDs, item IDs, content index, ordering/previous-item linkage và usage đúng pinned schema. Item nhiều chunk vẫn giữ cùng item; completed là transcript authoritative.
+- [x] Receiver/sender tách inference, bounded outbound queue, idle/send/session timeouts; session disconnect không hủy GPU ownership sớm.
 
 **Gate R3a:** SDK/schema state-machine tests: nhiều commit trên cùng socket, clear lúc item trước đang infer, bad base64, split samples, flush tail, resample packetized so với reference, item ordering, queue-full, disconnect, hai session isolation. Không quảng cáo word-by-word trước commit hoặc Realtime hội thoại.
+*(Đạt trên CPU + GPU: [m5-design.vi.md](m5-design.vi.md) §9, `docs/baseline/server.json`. Container gate chưa chạy:
+host không có Docker.)*
 
 ### M6 — Acoustic server VAD và partial tùy chọn (P2, sau M5)
 

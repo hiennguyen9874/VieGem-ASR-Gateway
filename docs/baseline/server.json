@@ -1,8 +1,8 @@
 {
-  "base_url": "http://127.0.0.1:18123",
-  "commit": "077575aef63b79c0f8aac2f504ef448a3d379dd6-dirty",
-  "started_unix": 1791977772,
-  "ready_wait_s": 2.196,
+  "base_url": "http://127.0.0.1:18011",
+  "commit": "04c77af7d8e3450fafc1ccbf93278e4374a779f8-dirty",
+  "started_unix": 1792029893,
+  "ready_wait_s": 0.005,
   "health": {
     "status": "ok"
   },
@@ -32,12 +32,12 @@
         "vtt": 2
       },
       "timings_s": {
-        "json": 0.158,
-        "text": 0.132,
+        "json": 0.129,
+        "text": 0.125,
         "sse_total": 0.129,
         "sse_first_event": 0.129,
-        "verbose_json": 0.126,
-        "srt_vtt": 0.285
+        "verbose_json": 0.136,
+        "srt_vtt": 0.255
       },
       "audio_s": 8.88,
       "baseline": "các sản phẩm thủ công có thể được coi là độ cổ mặc dù tuổi đời của chúng ch trẻ hơn rất nhiều các sản phẩm tương tự được sản xuất hàng loạt",
@@ -65,12 +65,12 @@
         "vtt": 2
       },
       "timings_s": {
-        "json": 0.13,
-        "text": 0.14,
-        "sse_total": 0.126,
-        "sse_first_event": 0.125,
-        "verbose_json": 0.126,
-        "srt_vtt": 0.258
+        "json": 0.127,
+        "text": 0.128,
+        "sse_total": 0.127,
+        "sse_first_event": 0.126,
+        "verbose_json": 0.135,
+        "srt_vtt": 0.255
       },
       "audio_s": 8.46,
       "baseline": "nghiên cứu trí tuệ nhân tạo bao gồm tạo ra những cỗ máy tự động hóa các tác dụ đòi hỏi hành vi thông minh",
@@ -98,12 +98,12 @@
         "vtt": 0
       },
       "timings_s": {
-        "json": 0.147,
-        "text": 0.122,
-        "sse_total": 0.135,
-        "sse_first_event": 0.134,
-        "verbose_json": 0.13,
-        "srt_vtt": 0.255
+        "json": 0.128,
+        "text": 0.126,
+        "sse_total": 0.125,
+        "sse_first_event": 0.125,
+        "verbose_json": 0.125,
+        "srt_vtt": 0.252
       },
       "audio_s": 2.0,
       "baseline": "",
@@ -131,12 +131,12 @@
         "vtt": 0
       },
       "timings_s": {
-        "json": 0.126,
-        "text": 0.124,
-        "sse_total": 0.116,
-        "sse_first_event": 0.115,
+        "json": 0.12,
+        "text": 0.119,
+        "sse_total": 0.12,
+        "sse_first_event": 0.12,
         "verbose_json": 0.119,
-        "srt_vtt": 0.234
+        "srt_vtt": 0.24
       },
       "audio_s": 0.2,
       "baseline": "",
@@ -164,26 +164,108 @@
         "vtt": 43
       },
       "timings_s": {
-        "json": 0.353,
-        "text": 0.347,
-        "sse_total": 0.343,
-        "sse_first_event": 0.174,
-        "verbose_json": 0.346,
-        "srt_vtt": 0.685
+        "json": 0.343,
+        "text": 0.335,
+        "sse_total": 0.334,
+        "sse_first_event": 0.167,
+        "verbose_json": 0.339,
+        "srt_vtt": 0.664
       },
       "audio_s": 106.62,
       "wer": 0.0699
     }
   },
+  "realtime": {
+    "vi_a.wav": {
+      "text": "các sản phẩm thủ công có thể được coi là độ cổ mặc dù tuổi đời của chúng ch trẻ hơn rất nhiều các sản phẩm tương tự được sản xuất hàng loạt",
+      "deltas": 1,
+      "audio_s": 8.88,
+      "timings_s": {
+        "append_send": 0.048,
+        "commit_to_first_delta": 0.058,
+        "commit_to_completed": 0.058
+      },
+      "wer": 0.0625,
+      "rest_wer": 0.0625
+    },
+    "vi_b.wav": {
+      "text": "nghiên cứu trí tuệ nhân tạo bao gồm tạo ra những cỗ máy tự động hóa các tác dụ đòi hỏi hành vi thông minh",
+      "deltas": 1,
+      "audio_s": 8.46,
+      "timings_s": {
+        "append_send": 0.045,
+        "commit_to_first_delta": 0.059,
+        "commit_to_completed": 0.059
+      },
+      "wer": 0.04,
+      "rest_wer": 0.04
+    },
+    "silence_2s.wav": {
+      "text": "",
+      "deltas": 0,
+      "audio_s": 2.0,
+      "timings_s": {
+        "append_send": 0.003,
+        "commit_to_first_delta": 0.057,
+        "commit_to_completed": 0.057
+      }
+    },
+    "short_200ms.wav": {
+      "text": "",
+      "deltas": 0,
+      "audio_s": 0.2,
+      "timings_s": {
+        "append_send": 0.001,
+        "commit_to_first_delta": 0.054,
+        "commit_to_completed": 0.054
+      }
+    },
+    "vi_long.wav": {
+      "text": "một số loài động vật như voi và hô cao cổ thường hay đã gần xe và chỉ với các dụng cụ bình thường chúng ta cũng sẽ quan sát một cách dễ dàng điện thoại vệ tinh nói chung không phải là sự thay thế cho điện thoại di động vì bạn phải ở ngoài trời và có tầm nhìn thông thoáng thẳng đến vệ tinh thì mới sử dụng được sau đó la singh giữa vai giờ chính khi hát các bài hát h bác sĩ nghĩ rằng một số bệnh nhân có thể đã bị lâyẹp ở bệnh viện và ít nhất hai người là nhân viên y tế trong bệnh viện tôi không biết bạn có nhận ra hay không nhưng hầu hết hàng hóa từúng mỹ nhập khẩu vào nước này đều được miễn thuế argentina nổi tiếng có một trong những đội bóng polo và cầu thủ giỏi nhất thế giới nếu đến thăm vùng bắc cực hoặc nam cực vào mùa đông bạn sẽ được trải nghiệm đến vùng cực nghĩa là mặt trời không nhú lên khỏi chân trời lúc đầu trang phục chịu ảnh hưởng nặng nề của nền văn hóa diesel ở phía đông điều lệ cần có sự nhất trí từ tất cả các bang trước khi sửa đổi và các bang xem nhẹ chính quyền trung ương đến mức đã diễn thường xuyên vắng mặt bản báo cáo mở đầu bằng lời biện hộ cho cuộc trên luận mở và tạo lập sự đồng thuận của hoa kỳ về chính sách đối với trung đồng",
+      "deltas": 4,
+      "audio_s": 106.62,
+      "timings_s": {
+        "append_send": 0.549,
+        "commit_to_first_delta": 0.072,
+        "commit_to_completed": 0.237
+      },
+      "wer": 0.0735,
+      "rest_wer": 0.0699
+    }
+  },
   "metrics_excerpt": [
-    "quan_decodes_total{outcome=\"ok\"} 30.0",
-    "quan_jobs_total{kind=\"file\",outcome=\"ok\"} 48.0",
-    "quan_transcriptions_total{outcome=\"ok\",response_format=\"json\",stream=\"false\"} 5.0",
-    "quan_transcriptions_total{outcome=\"ok\",response_format=\"json\",stream=\"true\"} 5.0",
-    "quan_transcriptions_total{outcome=\"ok\",response_format=\"srt\",stream=\"false\"} 5.0",
-    "quan_transcriptions_total{outcome=\"ok\",response_format=\"text\",stream=\"false\"} 5.0",
-    "quan_transcriptions_total{outcome=\"ok\",response_format=\"verbose_json\",stream=\"false\"} 5.0",
-    "quan_transcriptions_total{outcome=\"ok\",response_format=\"vtt\",stream=\"false\"} 5.0"
+    "quan_decodes_total{outcome=\"ok\"} 60.0",
+    "quan_jobs_total{kind=\"file\",outcome=\"ok\"} 96.0",
+    "quan_jobs_total{kind=\"live\",outcome=\"ok\"} 8.0",
+    "quan_realtime_audio_seconds_total 126.16000000000001",
+    "quan_realtime_client_events_total{type=\"input_audio_buffer.append\"} 6308.0",
+    "quan_realtime_client_events_total{type=\"input_audio_buffer.commit\"} 5.0",
+    "quan_realtime_commit_to_completed_seconds_bucket{le=\"0.005\"} 0",
+    "quan_realtime_commit_to_completed_seconds_bucket{le=\"0.01\"} 0",
+    "quan_realtime_commit_to_completed_seconds_bucket{le=\"0.025\"} 0",
+    "quan_realtime_commit_to_completed_seconds_bucket{le=\"0.05\"} 0",
+    "quan_realtime_commit_to_completed_seconds_bucket{le=\"0.1\"} 4",
+    "quan_realtime_commit_to_completed_seconds_bucket{le=\"0.25\"} 5",
+    "quan_realtime_commit_to_completed_seconds_bucket{le=\"0.5\"} 5",
+    "quan_realtime_commit_to_completed_seconds_bucket{le=\"1.0\"} 5",
+    "quan_realtime_commit_to_completed_seconds_bucket{le=\"2.5\"} 5",
+    "quan_realtime_commit_to_completed_seconds_bucket{le=\"5.0\"} 5",
+    "quan_realtime_commit_to_completed_seconds_bucket{le=\"10.0\"} 5",
+    "quan_realtime_commit_to_completed_seconds_bucket{le=\"30.0\"} 5",
+    "quan_realtime_commit_to_completed_seconds_bucket{le=\"60.0\"} 5",
+    "quan_realtime_commit_to_completed_seconds_bucket{le=\"120.0\"} 5",
+    "quan_realtime_commit_to_completed_seconds_bucket{le=\"+Inf\"} 5",
+    "quan_realtime_commit_to_completed_seconds_sum 0.45248308777809143",
+    "quan_realtime_commit_to_completed_seconds_count 5",
+    "quan_realtime_items_total{outcome=\"completed\"} 5.0",
+    "quan_realtime_sessions 0.0",
+    "quan_realtime_sessions_total{outcome=\"disconnected\"} 2.0",
+    "quan_transcriptions_total{outcome=\"ok\",response_format=\"json\",stream=\"false\"} 10.0",
+    "quan_transcriptions_total{outcome=\"ok\",response_format=\"json\",stream=\"true\"} 10.0",
+    "quan_transcriptions_total{outcome=\"ok\",response_format=\"srt\",stream=\"false\"} 10.0",
+    "quan_transcriptions_total{outcome=\"ok\",response_format=\"text\",stream=\"false\"} 10.0",
+    "quan_transcriptions_total{outcome=\"ok\",response_format=\"verbose_json\",stream=\"false\"} 10.0",
+    "quan_transcriptions_total{outcome=\"ok\",response_format=\"vtt\",stream=\"false\"} 10.0"
   ],
   "failures": []
 }

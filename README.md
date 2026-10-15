@@ -1,19 +1,22 @@
-# QUAN-Transcribe gateway (R1 + R2a)
+# QUAN-Transcribe gateway (R1 + R2a + R3a)
 
 Server nhận dạng tiếng nói tiếng Việt cho [QUAN-Transcribe-1.0](https://huggingface.co/qnguyen3/QUAN-Transcribe-1.0)
 với một **tập con** API OpenAI: `GET /v1/models`, `POST /v1/audio/transcriptions` (`json`, `text`, SSE,
-`verbose_json`, `srt`, `vtt`). Không
+`verbose_json`, `srt`, `vtt`) và Realtime transcription `GET /v1/realtime` (WebSocket, commit tường minh). Không
 phải tương thích OpenAI đầy đủ: xem capability matrix và payload ở [docs/api-contract.vi.md](docs/api-contract.vi.md).
 
 - Một process = một model instance = một GPU; mọi inference chạy tuần tự trên một worker thread, có queue công bằng.
 - Output là text gốc của model: chữ thường, không dấu câu, số viết bằng chữ. Subtitle `srt`/`vtt` có thời gian từ
   đường CTC greedy (cue cắt ở khoảng lặng ≥ 0.5 s; start có thể trễ ~1 âm tiết). `verbose_json` không có `segments`;
-  word timestamps (`timestamp_granularities[]=word`) chưa bật (chờ alignment gate). Không có logprobs, Realtime
-  (R3a); chỉ `language=vi`.
+  word timestamps (`timestamp_granularities[]=word`) chưa bật (chờ alignment gate). Không có logprobs; chỉ
+  `language=vi`.
+- Realtime chỉ là **transcription với commit tường minh** (`turn_detection: null`): transcript chỉ có sau
+  `input_audio_buffer.commit`, không có partial trước commit, không có VAD (R3b) hay Realtime hội thoại.
 - Alias `whisper-1` (tắt mặc định, `QUAN_WHISPER_ALIAS=true`) chỉ để client cũ chạy được: vẫn là model QUAN, output
   khác Whisper.
 
-Thiết kế: [docs/deployment-design.vi.md](docs/deployment-design.vi.md), [docs/m3-design.vi.md](docs/m3-design.vi.md).
+Thiết kế: [docs/deployment-design.vi.md](docs/deployment-design.vi.md), [docs/m3-design.vi.md](docs/m3-design.vi.md),
+[docs/m5-design.vi.md](docs/m5-design.vi.md).
 Baseline và số đo: [docs/baseline.vi.md](docs/baseline.vi.md), `docs/baseline/server.json`.
 
 ## 1. Chuẩn bị model (một lần, cần mạng)
@@ -33,14 +36,16 @@ token và không truy cập Hub.
 nvidia-smi                                   # chọn GPU còn trống
 export QUAN_API_KEYS=$(python3 -c "import secrets; print(secrets.token_urlsafe(32))")
 CUDA_VISIBLE_DEVICES=<gpu> HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 uv run --offline uvicorn --factory app.main:create_app \
-    --host 127.0.0.1 --port 18080 --workers 1 --no-access-log --timeout-graceful-shutdown 30
+    --host 127.0.0.1 --port 18080 --workers 1 --no-access-log --timeout-graceful-shutdown 30 \
+    --ws websockets-sansio --ws-max-size 2097152
 curl -s localhost:18080/ready                 # {"status":"ready"} sau khi load + warm-up (~15 s)
 ```
 
 Ví dụ local dùng port `18080`; chọn port khác nếu đang bị chiếm (port `8000` trên host này đã có service khác, nên mặc định dùng `18000`).
 
 Luôn `--workers 1`: muốn dùng nhiều GPU thì chạy nhiều process (mỗi process một `CUDA_VISIBLE_DEVICES`, một port)
-sau load balancer. Cần `ffmpeg` trên `PATH`.
+sau load balancer. Cần `ffmpeg` trên `PATH`. Luôn ghi `--ws websockets-sansio --ws-max-size 2097152`: mặc định
+`auto` âm thầm tắt WebSocket nếu thiếu thư viện, và giới hạn 2 MiB/message là một phần của contract.
 
 ## 3. Gọi API
 
@@ -69,6 +74,26 @@ with open("tests/fixtures/vi_a.wav", "rb") as f:
         print(event.type, getattr(event, "delta", None) or getattr(event, "text", ""))
 ```
 
+Realtime (Python SDK cần `openai[realtime]`): audio PCM16 little-endian mono 24 kHz, base64, nhiều commit trên một
+socket; mỗi commit thành một item với `delta` (một mỗi chunk ≤ 30 s) rồi `completed`.
+
+```python
+import base64
+
+with client.realtime.connect(model="quan-transcribe-1.0") as conn:
+    conn.recv()                                            # session.created (turn_detection: null)
+    for packet in pcm16_24k_packets:                       # bytes, ví dụ 20–200 ms mỗi packet
+        conn.input_audio_buffer.append(audio=base64.b64encode(packet).decode())
+    conn.input_audio_buffer.commit()
+    for event in conn:
+        if event.type == "conversation.item.input_audio_transcription.completed":
+            print(event.transcript)
+            break
+```
+
+JS SDK (`OpenAIRealtimeWS({intent: "transcription"}, client)`) luôn dùng `wss:`: cần TLS (proxy §6 hoặc Uvicorn
+`--ssl-certfile/--ssl-keyfile`). Lỗi event (`error`) không đóng socket; event, mã lỗi, thứ tự: contract §6.
+
 Định dạng audio: WAV, FLAC, MP3, MP4/M4A (AAC/ALAC), OGG (Vorbis/Opus/FLAC), WEBM/Matroska; nhận diện theo nội dung.
 Audio dài được cắt thành chunk ≤ 30 s tại điểm yên lặng; SSE gửi một delta cho mỗi chunk xong. Audio ≤ 100 ms → `""`.
 `srt`/`vtt`/`verbose_json` không stream được (`stream=true` → 400). Lỗi dùng envelope OpenAI (`error.code`), danh
@@ -91,7 +116,12 @@ Biến `QUAN_*` được kiểm tra lúc khởi động (biến lạ, giá trị
 | `QUAN_QUEUE_MAX_LANES` | 32 | Request đồng thời (đang decode/chờ/infer) → 429 |
 | `QUAN_QUEUE_TIMEOUT_SECONDS` | 30 | Chờ chỗ trong queue/slot decode tối đa → 429 |
 | `QUAN_REQUEST_TIMEOUT_SECONDS` | 600 | Tổng upload + decode + queue + infer + gửi response → 503/event `request_timeout` |
-| `QUAN_SEND_TIMEOUT_SECONDS` | 10 | Một lần gửi SSE; client không đọc → ngắt |
+| `QUAN_SEND_TIMEOUT_SECONDS` | 10 | Một lần gửi SSE/WebSocket; client không đọc → ngắt |
+| `QUAN_MAX_SESSIONS` | 16 | Realtime session đồng thời (≤ `QUAN_QUEUE_MAX_LANES`, mỗi session giữ một lane) → handshake 429 |
+| `QUAN_MAX_SESSION_SECONDS` | 3600 | Tuổi tối đa một session → `session_expired`, đóng |
+| `QUAN_SESSION_IDLE_TIMEOUT_SECONDS` | 120 | Không có event client và không có item đang chờ → `idle_timeout`, đóng |
+| `QUAN_MAX_TURN_SECONDS` | 120 | Audio chưa commit của một session → `input_audio_buffer_full` |
+| `QUAN_MAX_PENDING_ITEMS` | 4 | Item đã commit chưa xong của một session → `too_many_pending_items` |
 | `QUAN_INFER_HANG_SECONDS` | 120 | Một call inference lâu hơn → worker "hung", `/health` 503 |
 | `QUAN_SHUTDOWN_DRAIN_SECONDS` | 30 | Chờ job đang chạy khi tắt |
 
@@ -112,7 +142,8 @@ OPENAI_API_KEY=$(sudo cat secrets/quan_api_keys) uv run scripts/smoke_server.py 
 
 `compose.yaml`: rootfs read-only + tmpfs `/tmp`, `HF_HUB_OFFLINE=1`, port chỉ bind `127.0.0.1`, `stop_grace_period:
 70s`. Gate container (`tests/container/test_image.py`, chạy với `QUAN_GPU=<gpu> uv run pytest tests/container`):
-build, non-root, không có secret/file thừa, `--network none` → `/ready`, smoke, SIGTERM khi đang stream, restart.
+build, non-root, không có secret/file thừa, `--network none` → `/ready`, smoke (gồm Realtime), SIGTERM khi đang stream,
+restart.
 **Trạng thái: chưa chạy** — host phát triển không có Docker; R1 container gate chưa đạt cho tới khi chạy được trên
 host có Docker + NVIDIA Container Toolkit.
 
@@ -131,7 +162,17 @@ location /v1/ {
     proxy_send_timeout 620s;
     client_max_body_size 26m;       # >= QUAN_MAX_UPLOAD_BYTES (+ overhead multipart nhỏ)
 }
+location = /v1/realtime {
+    proxy_pass http://127.0.0.1:18080;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;   # WebSocket upgrade
+    proxy_set_header Connection "upgrade";
+    proxy_read_timeout 620s;        # > QUAN_SESSION_IDLE_TIMEOUT_SECONDS và thời gian một item
+    proxy_send_timeout 620s;
+}
 ```
+
+Client JS SDK Realtime chỉ kết nối `wss:`, nên proxy phải làm TLS cho `/v1/realtime`.
 
 Không public `/metrics` (cần API key nhưng vẫn nên chỉ cho mạng nội bộ). `/health`, `/ready` không cần key.
 
@@ -143,10 +184,14 @@ Không public `/metrics` (cần API key nhưng vẫn nên chỉ cho mạng nội
   supervisor có liveness (Kubernetes `livenessProbe` trên `/health`, systemd watchdog script, hoặc autoheal) để
   restart. Lỗi inference đơn lẻ trả 500 `inference_failed` và worker tự warm-up lại.
 - Tắt (SIGTERM): ngừng nhận kết nối mới, request đang chạy được làm xong (tối đa 30 s), rồi drain queue (30 s) và
-  dừng worker; log `server.stopped` có `drained`.
+  dừng worker; log `server.stopped` có `drained`. Realtime **không** được drain: Uvicorn đóng mọi WebSocket với
+  1012 ngay khi tắt, item chưa `completed` bị mất; client kết nối lại và gửi lại audio. Rolling restart: ngừng route
+  session mới ở load balancer trước SIGTERM.
 - Log JSON ra stderr, chỉ metadata (`request_id`, thời lượng, outcome); không ghi audio, transcript, key, tên file.
   `/metrics` (Prometheus): `quan_transcriptions_total{response_format,stream,outcome}`, `quan_jobs_total`,
-  `quan_queue_wait_seconds`, `quan_infer_seconds`, `quan_sse_first_event_seconds`, `quan_ready`, `quan_worker_hung`, ….
+  `quan_queue_wait_seconds`, `quan_infer_seconds`, `quan_sse_first_event_seconds`, `quan_ready`, `quan_worker_hung`,
+  `quan_realtime_sessions`, `quan_realtime_sessions_total{outcome}`, `quan_realtime_items_total{outcome}`,
+  `quan_realtime_commit_to_completed_seconds`, ….
 - Xoay vòng key: thêm key mới vào file, restart, đổi client, bỏ key cũ, restart.
 
 ## 8. Kiểm thử

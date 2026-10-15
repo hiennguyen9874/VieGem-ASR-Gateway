@@ -184,7 +184,11 @@ class AudioIngress:
 
     def hold(self, wav: np.ndarray) -> Callable[[], None]:
         """Reserve decoded RAM (429 if full). Release only after the request AND its jobs finish."""
-        n = len(wav)
+        return self.reserve(len(wav))
+
+    def reserve(self, n: int) -> Callable[[], None]:
+        """Reserve `n` samples of the decoded-audio budget (realtime turns reserve per append). Call the returned
+        release exactly once."""
         if self._held + n > self._max_held:
             raise server_busy(retry_after=1)
         self._held += n

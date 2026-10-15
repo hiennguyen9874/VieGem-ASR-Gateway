@@ -248,3 +248,24 @@ def test_realtime_server_events_validate_and_are_consistent():
     assert "".join(d.delta for d in deltas) == done.transcript
     assert done.usage.type == "duration"
     assert len({e.event_id for e in events}) == len(events)
+
+
+def test_realtime_error_examples_match_gateway_errors():
+    from app import errors
+
+    def event_error(e, event_id=None):
+        body = {"type": e.type, "code": e.code, "message": e.message, "param": e.param}
+        return body | ({"event_id": event_id} if event_id else {})
+
+    raw = [e["error"] for e in lines("realtime_server.jsonl") if e["type"] == "error"]
+    assert raw == [
+        event_error(errors.invalid_request("invalid_audio", "input_audio_buffer.append: audio is not valid base64.",
+                                           "audio"), "client_evt_5"),
+        event_error(errors.unknown_parameter("session.audio.input.foo"), "client_evt_6"),
+        event_error(errors.input_audio_buffer_commit_empty(), "client_evt_7"),
+        event_error(errors.server_busy(1), "client_evt_8"),
+        event_error(errors.idle_timeout(120)),
+    ]
+    failed = [e for e in lines("realtime_server.jsonl") if e["type"].endswith(".failed")]
+    e = errors.inference_failed()
+    assert [f["error"] for f in failed] == [{"type": e.type, "code": e.code, "message": e.message}]

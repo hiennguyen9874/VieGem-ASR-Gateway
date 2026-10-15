@@ -2,8 +2,10 @@
 
 - Design: docs/deployment-design.vi.md
 - Plan: docs/implementation-plan.vi.md (M3 REST/SSE done; container gate not yet run: no Docker on this host;
-  M4 R2a verbose_json/srt/vtt done; R2b word timestamps blocked on a hand-annotated set)
+  M4 R2a verbose_json/srt/vtt done; R2b word timestamps blocked on a hand-annotated set;
+  M5 R3a realtime explicit commit done, CPU + GPU gate passed)
 - M3 design + deviations: docs/m3-design.vi.md
+- M5 design + results: docs/m5-design.vi.md (§9)
 - Baseline (M0 results, pins, measurements): docs/baseline.vi.md
 - API contract (pinned OpenAI SDK profile, payloads, error codes): docs/api-contract.vi.md
 
@@ -24,7 +26,10 @@ app/main.py                # FastAPI app factory: lifespan, /health, /ready, /me
 app/transcription.py       # /v1/models, POST /v1/audio/transcriptions (raw ASGI: json/text/SSE/verbose_json/srt/vtt,
                            #   disconnect watch, send timeout), parse_params, Joiner (the only text joiner), run_chunks,
                            #   WORD_TIMESTAMPS release switch (R2b gate)
-app/errors.py, schemas.py  # OpenAI error envelope + status/code mapping
+app/realtime.py            # GET /v1/realtime (raw ASGI WebSocket, R3a explicit commit): handshake checks before accept,
+                           #   TurnBuffer (PCM16 24 kHz -> streaming soxr 16 kHz), session.update/event validation,
+                           #   one LIVE lane per session, FIFO items via split/run_chunks/Joiner, bounded sends
+app/errors.py, schemas.py  # OpenAI error envelope + status/code mapping, realtime error factories, send_error
 app/observability.py       # JSON logs + Prometheus-style metrics (metadata only)
 assets/manifest.json       # single source of model pins: repo id, commit, size + SHA256 per file
 scripts/stage_models.py    # download pinned assets into ./models (or $QUAN_MODELS_DIR), verify SHA256
@@ -38,15 +43,19 @@ docs/baseline/*.json       # saved reports (online / offline / server smoke, ali
 tests/
   unit/                    # CPU: manifests and pins, config, app over real Uvicorn with a fake engine;
                            #      transcription params/joiner and end-to-end API (FFmpeg, disconnect, SSE, drain,
-                           #      timed formats); test_alignment.py: CTC path -> words/cues
+                           #      timed formats); test_alignment.py: CTC path -> words/cues;
+                           #      test_realtime_units.py (pure), test_realtime_api.py (real Uvicorn WS + fake engine)
   scheduler/               # CPU: scheduler/worker gate with a fake engine (serialization, bounds, fairness, cancel)
   audio/                   # CPU + ffmpeg: formats, hostile inputs, decode bounds, multipart limits, temp cleanup
   fake_engine.py           # engine stand-in shared by CPU tests (`text_fn` for real decoded audio; synthetic CTC path)
-  live_server.py           # real Uvicorn around create_app + float-WAV audio + SRT/VTT parser, shared by E2E/contract
+  live_server.py           # real Uvicorn (websockets-sansio, optional self-signed TLS) around create_app + float-WAV
+                           #   and PCM24 audio + SRT/VTT parser + raw realtime client `WS`, shared by E2E/contract/GPU
   contract/                # CPU: examples/ parsed by pinned OpenAI Python SDK; js/ for the JS SDK;
                            #      test_server_sdk.py: real server vs examples, Python SDK + js/server.test.ts
+                           #      (REST over http, Realtime over wss with a self-signed cert)
   gpu/                     # GPU: local loader == reference loader (exact logits, needs network); real engine;
-                           #      decode -> chunk -> engine pipeline; test_server.py: real app over HTTP (R2a cue gate)
+                           #      decode -> chunk -> engine pipeline; test_server.py: real app over HTTP (R2a cue gate);
+                           #      test_realtime.py: R3a gate (20 ms packets, == REST on committed audio, WER, isolation)
   container/               # Docker: image gate (skips without docker; runtime part needs QUAN_GPU)
   fixtures/                # small committed fixtures + manifest.json (hashes, references, license)
 models/                    # staged assets (gitignored)
@@ -66,7 +75,8 @@ CUDA_VISIBLE_DEVICES=<free gpu> HF_HOME=$(mktemp -d) uv run --offline scripts/sm
 uv run pytest                                    # unit + scheduler + contract; GPU tests skip without CUDA/assets
 CUDA_VISIBLE_DEVICES=<free gpu> uv run pytest tests/gpu
 QUAN_API_KEYS=<key> CUDA_VISIBLE_DEVICES=<free gpu> uv run uvicorn --factory app.main:create_app \
-    --workers 1 --no-access-log --timeout-graceful-shutdown 30   # one process per GPU; /ready after warm-up
+    --workers 1 --no-access-log --timeout-graceful-shutdown 30 \
+    --ws websockets-sansio --ws-max-size 2097152                  # one process per GPU; /ready after warm-up
 (cd tests/contract/js && npm ci && npm test)     # JS SDK contract (tsc --strict + node --test); server tests via pytest
 OPENAI_API_KEY=<key> uv run scripts/smoke_server.py --base-url http://127.0.0.1:<port> --out docs/baseline/server.json
 QUAN_GPU=<free gpu> uv run pytest tests/container   # needs docker + NVIDIA Container Toolkit
@@ -91,6 +101,10 @@ CUDA_VISIBLE_DEVICES=<free gpu> uv run scripts/probe_alignment.py --out docs/bas
   them in a shell that starts the server; an unknown `QUAN_*` variable aborts startup.
 - Contract changes: update `tests/contract/examples/` plus both SDK tests, then docs/api-contract.vi.md. Omit
   optional fields rather than sending `null` (the JS types reject `null` for several of them).
+- Realtime: always run Uvicorn with `--ws websockets-sansio --ws-max-size 2097152` (`auto` silently drops WS). The
+  realtime endpoint, like REST, never calls the model: one LIVE lane per session, items via `run_chunks` + `Joiner`;
+  pending audio counts against `AudioIngress.reserve`. The JS realtime SDK only uses `wss:` (tests use a self-signed
+  cert via `serve(tls_dir=...)`).
 - Timestamps come only from the greedy CTC path via `app/alignment.py`; on mismatch fail with `alignment_failed`,
   never spread times evenly. Word timestamps stay off (`WORD_TIMESTAMPS = False`) until the m4-design §7 gate passes.
 - Never commit or log HF_TOKEN, API keys, audio or transcripts.

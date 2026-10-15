@@ -16,13 +16,14 @@ dependencies = [
     "fastapi>=0.143.0",
     "uvicorn>=0.54.0",
     "python-multipart>=0.0.20",
+    "websockets>=13,<16",
 ]
 
 [dependency-groups]
 dev = [
     "pytest",
     # Pinned SDK used to verify the API contract (docs/api-contract.vi.md).
-    "openai==3.31.0",
+    "openai[realtime]==3.31.0",
 ]
 
 [tool.uv]

@@ -69,12 +69,13 @@ class Lane:
         self.running: Job | None = None
         self.unfinished = 0  # queued + running
         self.closed = False
-        self._release_audio: Callable[[], None] | None = None
+        self._release_audio: list[Callable[[], None]] = []
 
     def release_audio_when_idle(self, release: Callable[[], None]) -> None:
-        """Release a closed request's decoded-audio reservation after all its views stop running."""
+        """Call `release` (a decoded-audio reservation) once no job of this lane is unfinished, at once if idle.
+        Every registered callback runs once, in registration order."""
         if self.unfinished:
-            self._release_audio = release
+            self._release_audio.append(release)
         else:
             release()
 
@@ -220,9 +221,10 @@ class Scheduler:
         job.state = JobState.DONE
         job.audio = None
         job.lane.unfinished -= 1
-        if job.lane.unfinished == 0 and job.lane._release_audio is not None:
-            release, job.lane._release_audio = job.lane._release_audio, None
-            release()
+        if job.lane.unfinished == 0 and job.lane._release_audio:
+            releases, job.lane._release_audio = job.lane._release_audio, []
+            for release in releases:
+                release()
         self._jobs -= 1
         self._samples -= job.samples
         self._wake()

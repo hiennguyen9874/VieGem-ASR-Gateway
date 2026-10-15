@@ -1,14 +1,17 @@
 """OpenAI error envelope and the gateway's status/code mapping (docs/api-contract.vi.md §7).
 
 `APIError` is raised by any layer (scheduler, engine adapter, endpoints). HTTP handlers render it as a JSON
-envelope; the realtime adapter (M5) reuses `type`/`code`/`message`/`param` for its `error` events. Messages must
-never contain audio, transcripts, tokens or internal paths.
+envelope; the realtime adapter reuses `type`/`code`/`message`/`param` for its `error` events (their `status` is
+unused there). Messages must never contain audio, transcripts, tokens or internal paths.
 """
+
+import json
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
+from starlette.types import Scope, Send
 
 from app.schemas import ErrorBody, ErrorResponse
 
@@ -95,6 +98,60 @@ def shutting_down() -> APIError:
 
 def request_timeout() -> APIError:
     return APIError(503, "server_error", "request_timeout", "Request timed out.")
+
+
+# -- realtime `error` events (docs/api-contract.vi.md §6) ---------------------------------------------------------
+
+def invalid_event(message: str, param: str | None = None) -> APIError:
+    return invalid_request("invalid_event", message, param)
+
+
+def unsupported_event() -> APIError:
+    return invalid_request("unsupported_event", "This event type is not supported by this server.", "type")
+
+
+def unknown_parameter(param: str) -> APIError:
+    """`param` is the dotted path of the client's key, cut to 64 characters."""
+    return invalid_request("unknown_parameter", "Unknown parameter.", param[:64] if param.isprintable() else "<invalid>")
+
+
+def input_audio_buffer_full(limit_seconds: float) -> APIError:
+    return invalid_request("input_audio_buffer_full",
+                           f"Input audio buffer would exceed {limit_seconds:g} seconds; commit or clear it first.")
+
+
+def input_audio_buffer_commit_empty() -> APIError:
+    return invalid_request("input_audio_buffer_commit_empty", "Input audio buffer is empty.")
+
+
+def too_many_pending_items(limit: int) -> APIError:
+    return invalid_request("too_many_pending_items",
+                           f"More than {limit} committed items are waiting for transcription; commit again later.")
+
+
+def idle_timeout(seconds: float) -> APIError:
+    return invalid_request("idle_timeout", f"No client event for {seconds:g} seconds; closing the session.")
+
+
+def session_expired(seconds: float) -> APIError:
+    return invalid_request("session_expired", f"Session reached its maximum duration of {seconds:g} seconds.")
+
+
+# -- rendering ----------------------------------------------------------------------------------------------------
+
+async def send_error(scope: Scope, send: Send, error: APIError) -> None:
+    """Raw ASGI error response; for a WebSocket handshake, an HTTP denial response before accept."""
+    body = json.dumps(error.body()).encode()
+    headers = [(b"content-type", b"application/json"), (b"content-length", str(len(body)).encode())]
+    headers += [(k.lower().encode(), v.encode()) for k, v in error.headers.items()]
+    if scope["type"] == "http":
+        await send({"type": "http.response.start", "status": error.status, "headers": headers})
+        await send({"type": "http.response.body", "body": body})
+    elif "websocket.http.response" in (scope.get("extensions") or {}):
+        await send({"type": "websocket.http.response.start", "status": error.status, "headers": headers})
+        await send({"type": "websocket.http.response.body", "body": body})
+    else:  # server without the denial-response extension: refuse the handshake (403)
+        await send({"type": "websocket.close", "code": 1008})
 
 
 def install_handlers(app: FastAPI) -> None:

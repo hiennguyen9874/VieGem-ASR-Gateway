@@ -4,13 +4,18 @@ verbose_json/srt/vtt on the fixtures, transcripts compared with the offline infe
     OPENAI_API_KEY=<gateway key> uv run scripts/smoke_server.py --base-url http://127.0.0.1:18000 \
         --out docs/baseline/server.json
 
-Standard library only, so it runs from the host against a container port as well. Checks (exit 1 if one fails):
+Runs with `uv run` from the host against a container port as well (or with the image's venv). Checks (exit 1 if one
+fails):
 - every fixture: json text == text body == "".join(SSE deltas) == SSE done text == verbose_json text == SRT/VTT cue
   texts joined by spaces; usage.seconds == verbose_json duration == samples / 16 kHz; cues ordered, inside the audio;
 - fixtures of one chunk (<= QUAN_MAX_CHUNK_SECONDS, 16 kHz WAV decodes bit-exactly): text == docs/baseline/offline.json
   (same greedy decoder, same model); silence and the 200 ms clip -> "";
 - fixtures-large/vi_long.wav, if present: WER against the FLEURS reference <= 0.10 (the server's quiet-point chunking
-  differs from the reference splitter used by the baseline, so text parity is not expected).
+  differs from the reference splitter used by the baseline, so text parity is not expected);
+- Realtime (`/v1/realtime`, one socket, one commit per fixture, 24 kHz PCM16 in 20 ms packets): events in order,
+  transcript == joined deltas, usage == committed seconds, WER <= REST WER + 0.02 (soxr + PCM16 vs no resampling),
+  silence -> "". This part imports runtime dependencies (`websockets`, `numpy`, `soundfile`, `soxr`); the rest is
+  stdlib only.
 """
 
 import argparse
@@ -35,6 +40,10 @@ LONG = ROOT / "fixtures-large/vi_long.wav"
 MODEL = "quan-transcribe-1.0"
 LONG_MAX_WER = 0.10
 SMALL = ("vi_a.wav", "vi_b.wav", "silence_2s.wav", "short_200ms.wav")
+REALTIME_WER_SLACK = 0.02
+PCM_RATE = 24000
+
+
 class Gateway:
     def __init__(self, base_url: str, api_key: str, timeout: float):
         self.base, self.key, self.timeout = base_url.rstrip("/"), api_key, timeout
@@ -120,6 +129,64 @@ def run_fixture(gw: Gateway, audio: bytes) -> dict:
     }
 
 
+def run_realtime(gw: Gateway, paths: list[Path]) -> tuple[dict, list[str]]:
+    """One socket, one commit per fixture; returns per-fixture results and failures."""
+    import base64
+
+    import numpy as np
+    import soundfile as sf
+    import soxr
+    from websockets.sync.client import connect
+
+    url = "ws" + gw.base.removeprefix("http") + f"/v1/realtime?model={MODEL}"
+    results, failures = {}, []
+    with connect(url, additional_headers={"Authorization": f"Bearer {gw.key}"}, max_size=None,
+                 open_timeout=30) as ws:
+        def recv() -> dict:
+            return json.loads(ws.recv(gw.timeout))
+
+        if recv()["type"] != "session.created":
+            failures.append("realtime: no session.created")
+        previous = None
+        for path in paths:
+            wav, sr = sf.read(path, dtype="float32")
+            up = soxr.resample(wav, sr, PCM_RATE, quality="HQ")
+            pcm = np.round(np.clip(up, -1, 32767 / 32768) * 32768).astype("<i2").tobytes()
+            t0 = time.monotonic()
+            for i in range(0, len(pcm), PCM_RATE // 50 * 2):
+                ws.send(json.dumps({"type": "input_audio_buffer.append",
+                                    "audio": base64.b64encode(pcm[i:i + PCM_RATE // 50 * 2]).decode()}))
+            t1 = time.monotonic()
+            ws.send(json.dumps({"type": "input_audio_buffer.commit"}))
+            events = [recv()]
+            first_delta = None
+            while not events[-1]["type"].startswith("conversation.item.input_audio_transcription.") or events[-1][
+                    "type"].endswith(".delta"):
+                events.append(recv())
+                if first_delta is None and events[-1]["type"].endswith(".delta"):
+                    first_delta = time.monotonic()
+            t2 = time.monotonic()
+            types = [e["type"] for e in events]
+            deltas = [e["delta"] for e in events if e["type"].endswith(".delta")]
+            done = events[-1]
+            name = path.name
+            if (types[:2] != ["input_audio_buffer.committed", "conversation.item.added"]
+                    or events[0]["previous_item_id"] != previous or not types[-1].endswith(".completed")):
+                failures.append(f"realtime {name}: events {types[:2]}..{types[-1]}")
+                results[name] = {"events": types}
+                continue
+            previous = events[0]["item_id"]
+            seconds = len(pcm) / 2 / PCM_RATE
+            if done["transcript"] != "".join(deltas) or done["usage"] != {"type": "duration", "seconds": seconds}:
+                failures.append(f"realtime {name}: transcript/usage disagree")
+            results[name] = {"text": done["transcript"], "deltas": len(deltas), "audio_s": seconds,
+                             "timings_s": {"append_send": round(t1 - t0, 3),
+                                           "commit_to_first_delta": round((first_delta or t2) - t1, 3),
+                                           "commit_to_completed": round(t2 - t1, 3)}}
+            print(f"realtime {name}: {results[name]['timings_s']} deltas={len(deltas)}", file=sys.stderr)
+    return results, failures
+
+
 def git_commit() -> str | None:
     try:
         out = subprocess.run(["git", "rev-parse", "HEAD"], cwd=ROOT, capture_output=True, text=True, check=True)
@@ -191,9 +258,22 @@ def main() -> int:
                 failures.append(f"{name}: WER {res['wer']} > {LONG_MAX_WER}")
         report["results"][name] = res
         print(f"{name}: {res['timings_s']} deltas={res['deltas']}", file=sys.stderr)
+    report["realtime"], rt_failures = run_realtime(gw, inputs)
+    failures += rt_failures
+    for name, res in report["realtime"].items():
+        if "text" not in res:
+            continue
+        ref = manifest[name]["reference"]
+        if ref:
+            res["wer"] = round(wer(ref, res["text"]), 4)
+            res["rest_wer"] = round(wer(ref, report["results"][name]["text"]), 4)
+            if res["wer"] > res["rest_wer"] + REALTIME_WER_SLACK:
+                failures.append(f"realtime {name}: WER {res['wer']} > REST {res['rest_wer']} + {REALTIME_WER_SLACK}")
+        elif name == "silence_2s.wav" and res["text"] != "":
+            failures.append(f"realtime {name}: expected empty transcript")
     report["metrics_excerpt"] = [
         line for line in gw.request("GET", "/metrics").read().decode().splitlines()
-        if line.startswith(("quan_transcriptions_total", "quan_jobs_total", "quan_decodes_total"))
+        if line.startswith(("quan_transcriptions_total", "quan_jobs_total", "quan_decodes_total", "quan_realtime_"))
     ]
     report["failures"] = failures
     out = json.dumps(report, ensure_ascii=False, indent=2)
