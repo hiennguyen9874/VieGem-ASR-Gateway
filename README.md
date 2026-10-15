@@ -22,10 +22,36 @@ Baseline và số đo: [docs/baseline.vi.md](docs/baseline.vi.md), `docs/baselin
 ## 1. Chuẩn bị model (một lần, cần mạng)
 
 ```bash
-uv sync
-HF_TOKEN=<token đọc được qnguyen3/QUAN-Transcribe-1.0> uv run scripts/stage_models.py   # -> ./models, kiểm tra SHA256
-uv run scripts/stage_models.py --verify                                                  # kiểm tra lại, không cần mạng
+uv sync --extra cu126
+HF_TOKEN=<token đọc được qnguyen3/QUAN-Transcribe-1.0> uv run --extra cu126 scripts/stage_models.py   # -> ./models, kiểm tra SHA256
+uv run --extra cu126 scripts/stage_models.py --verify                                                  # kiểm tra lại, không cần mạng
 ```
+
+### Chọn CUDA wheel (local và Docker)
+
+| Profile | PyTorch pin | Dùng cho |
+|---|---|---|
+| `cu126` | `2.14.1+cu126` | Baseline hiện có; GPU tới `sm_90` |
+| `cu128` | `2.11.0+cu128` | CUDA 12.8, gồm Blackwell/RTX 5090 (`sm_120`) |
+
+Luôn chọn **một** extra cho `uv sync` **và** mọi `uv run`; thay `--extra cu126` trong các lệnh bên dưới bằng
+`--extra cu128` trên RTX 5090. Không chạy `uv sync`/`uv run` trần: dependency torch của upstream có thể chọn wheel
+PyPI ngoài hai profile đã kiểm chứng. Không dùng `--all-extras` (hai profile xung đột). Chuyển profile bằng
+`uv sync --extra cu128` rồi tiếp tục `uv run --extra cu128 ...`; không dùng lẫn hai môi trường khi server đang chạy.
+PyTorch không phát hành 2.14.1 cho cu128 nên profile này pin 2.11.0 riêng, không đổi baseline cu126.
+CUDA toolkit trên host không cần cài: wheel mang CUDA runtime; driver host phải tương thích (cu128 trên driver
+575.64.03 của host này, cu126/cu128 yêu cầu Linux driver ít nhất 560.28.03/570.26 cho toolkit tương ứng).
+
+Docker mặc định `TORCH_CUDA=cu126`; Blackwell:
+
+```bash
+docker build --build-arg TORCH_CUDA=cu128 -t quan-transcribe:cu128 .
+QUAN_BUILD_CUDA=cu128 QUAN_GPU=<gpu> docker compose up -d --build
+QUAN_GPU=<gpu> uv run --extra cu128 pytest tests/container --container-cuda=cu128
+```
+
+`TORCH_CUDA` là build arg; `QUAN_BUILD_CUDA`/`QUAN_GPU` chỉ cho compose/tests, không export vào shell khởi động
+server trực tiếp (config từ chối các biến `QUAN_*` lạ). Không tự đổi CUDA profile theo GPU hay fallback sang CPU.
 
 Revision và hash của mọi file nằm trong `assets/manifest.json`. `HF_TOKEN` chỉ dùng lúc staging; server không cần
 token và không truy cập Hub.
@@ -35,7 +61,7 @@ token và không truy cập Hub.
 ```bash
 nvidia-smi                                   # chọn GPU còn trống
 export QUAN_API_KEYS=$(python3 -c "import secrets; print(secrets.token_urlsafe(32))")
-CUDA_VISIBLE_DEVICES=<gpu> HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 uv run --offline uvicorn --factory app.main:create_app \
+CUDA_VISIBLE_DEVICES=<gpu> HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 uv run --extra cu126 --offline uvicorn --factory app.main:create_app \
     --host 127.0.0.1 --port 18080 --workers 1 --no-access-log --timeout-graceful-shutdown 30 \
     --ws websockets-sansio --ws-max-size 2097152
 curl -s localhost:18080/ready                 # {"status":"ready"} sau khi load + warm-up (~15 s)
@@ -133,19 +159,21 @@ Image: Ubuntu 24.04 (pin digest), Python 3.12.14, FFmpeg 6.1.1, chạy user `100
 `assets/manifest.json`. Model mount read-only lúc chạy; không có token/key trong image. Cần NVIDIA Container Toolkit.
 
 ```bash
-uv run scripts/stage_models.py                              # trên host: ./models
+uv run --extra cu126 scripts/stage_models.py                              # trên host: ./models
 mkdir -p secrets && python3 -c "import secrets; print(secrets.token_urlsafe(32))" > secrets/quan_api_keys
 sudo chown 10001 secrets/quan_api_keys && sudo chmod 0400 secrets/quan_api_keys   # đọc được bởi user trong container
 QUAN_GPU=<gpu> docker compose up -d --build
-OPENAI_API_KEY=$(sudo cat secrets/quan_api_keys) uv run scripts/smoke_server.py --base-url http://127.0.0.1:18000
+OPENAI_API_KEY=$(sudo cat secrets/quan_api_keys) uv run --extra cu126 scripts/smoke_server.py --base-url http://127.0.0.1:18000
 ```
 
 `compose.yaml`: rootfs read-only + tmpfs `/tmp`, `HF_HUB_OFFLINE=1`, port chỉ bind `127.0.0.1`, `stop_grace_period:
-70s`. Gate container (`tests/container/test_image.py`, chạy với `QUAN_GPU=<gpu> uv run pytest tests/container`):
+70s`. Gate container (`tests/container/test_image.py`, chạy với `QUAN_GPU=<gpu> uv run --extra cu126 pytest tests/container`):
 build, non-root, không có secret/file thừa, `--network none` → `/ready`, smoke (gồm Realtime), SIGTERM khi đang stream,
-restart.
-**Trạng thái: chưa chạy** — host phát triển không có Docker; R1 container gate chưa đạt cho tới khi chạy được trên
-host có Docker + NVIDIA Container Toolkit.
+restart; thêm auth/errors/overload và concurrent isolation.
+**Trạng thái: GPU container gate đạt với cu128 trên RTX 5090: 6 passed, không skip.** cu126 giữ nguyên baseline,
+không hỗ trợ RTX 5090; dùng `--extra cu128` và `--container-cuda=cu128` cho GPU này.
+CPU diagnostics (`uv run --extra cu126 pytest tests/container --container-device=cpu`) không thay thế GPU gate.
+Bằng chứng: [docs/container-gate.vi.md](docs/container-gate.vi.md), `docs/baseline/server-container-cu128.json`.
 
 ## 6. Reverse proxy và TLS
 
@@ -197,7 +225,7 @@ Không public `/metrics` (cần API key nhưng vẫn nên chỉ cho mạng nội
 ## 8. Kiểm thử
 
 ```bash
-uv run pytest                                     # CPU: unit, scheduler, audio, contract (GPU/container tests skip)
+uv run --extra cu126 pytest                                     # CPU: unit, scheduler, audio, contract (GPU/container tests skip)
 (cd tests/contract/js && npm ci && npm test)      # JS SDK contract (server tests chạy qua pytest)
-CUDA_VISIBLE_DEVICES=<gpu> uv run pytest tests/gpu
+CUDA_VISIBLE_DEVICES=<gpu> uv run --extra cu126 pytest tests/gpu
 ```

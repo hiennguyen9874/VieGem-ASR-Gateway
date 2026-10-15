@@ -4,7 +4,7 @@
 # HF token or API key is ever part of the image. Build: docker build -t quan-transcribe:r1 .
 #
 # Base: Ubuntu 24.04 for FFmpeg 6.1.1 (the version the M2 decoder allowlist was tested with) and a uv-managed
-# CPython 3.12.14 (the baseline's). The torch cu126 wheel ships its CUDA libraries; only the driver comes from the
+# CPython 3.12.14 (the baseline's). The selected torch wheel ships its CUDA libraries; only the driver comes from the
 # host (NVIDIA Container Toolkit).
 ARG BASE=ubuntu:24.04@sha256:534baea6a22c03a63003dbc8dbe78fe34bc0d7e595d9a9dc9834884ff530eb55
 
@@ -20,8 +20,11 @@ ENV UV_PYTHON_INSTALL_DIR=/opt/python UV_PYTHON_PREFERENCE=only-managed UV_LINK_
 RUN uv python install 3.12.14
 WORKDIR /srv
 COPY pyproject.toml uv.lock ./
-# Exact versions from uv.lock (quan-transcribe at its pinned commit, torch from the cu126 index); no dev tools.
-RUN uv sync --frozen --no-dev --python 3.12.14
+# Exact, mutually exclusive profiles from uv.lock; cu126 preserves the baseline, cu128 supports Blackwell.
+# docker build --build-arg TORCH_CUDA=cu128 -t quan-transcribe:cu128 .
+ARG TORCH_CUDA=cu126
+RUN case "$TORCH_CUDA" in cu126|cu128) ;; *) echo 'TORCH_CUDA must be cu126 or cu128' >&2; exit 1;; esac \
+    && uv sync --frozen --no-dev --extra "$TORCH_CUDA" --python 3.12.14
 
 FROM ${BASE}
 RUN apt-get update \

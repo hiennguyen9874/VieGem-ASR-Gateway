@@ -94,20 +94,21 @@ upload/decode.
 
 ### M3 — REST/SSE và R1 container (P0, sau M1–M2)
 
-Trạng thái: **REST/SSE đạt, container gate chưa đạt.** Thiết kế chi tiết [m3-design.vi.md](m3-design.vi.md).
+Trạng thái: **REST/SSE và R1 container gate đạt (cu128, RTX 5090).** Thiết kế chi tiết [m3-design.vi.md](m3-design.vi.md).
 CPU: `tests/unit/test_transcription_{params,api}.py` (Uvicorn + FFmpeg thật, fake engine), contract với server thật
 (`tests/contract/test_server_sdk.py` + `js/server.test.ts`). GPU: `tests/gpu/test_server.py`; smoke
 `scripts/smoke_server.py` → `docs/baseline/server.json` (4 fixture ngắn = baseline offline, `vi_long` WER 7.0%).
-Container: file đã viết, `uv sync --frozen --no-dev` + smoke đã chạy trên host từ môi trường giống image, nhưng
-**chưa build/chạy image** (host không có Docker; D1).
+Container: **6 GPU tests pass, không skip**, profile cu128 (`torch==2.11.0+cu128`) trên RTX 5090;
+smoke metadata: `docs/baseline/server-container-cu128.json`. cu126 giữ `torch==2.14.1+cu126`, chỉ hỗ trợ GPU tương thích
+(không có sm_120). Hai profiles chọn rõ qua extras/build args; chi tiết: [container-gate.vi.md](container-gate.vi.md).
 
 - [x] `app/transcription.py`: `/v1/models`, `/v1/models/{id}`, multipart transcription, model bắt buộc; alias `whisper-1` opt-in và documented. *(Endpoint transcription là ASGI handler riêng, không dùng `StreamingResponse`.)*
 - [x] Parse repeated `include[]`, `timestamp_granularities[]`; language chỉ absent/vi, temperature absent/0; reject prompt không rỗng, rich formats và tham số chưa hỗ trợ. Field lạ theo policy trong contract, không silently claim hỗ trợ. *(Thứ tự validate cố định, field đơn lặp → 400; contract §4.)*
 - [x] Dùng chung splitter/decoder/joiner cho JSON, text và SSE; full-context từng chunk, separator deterministic. JSON chỉ có field đã có ngữ nghĩa thật. *(`Joiner` duy nhất; `run_chunks` giữ ≤ `QUAN_QUEUE_MAX_JOBS_PER_LANE` chunk trong queue.)*
 - [x] Validate request và decode input trước stream headers trong R1; SSE emit từng chunk final ngay khi xong, một done ở cuối. Nối delta bằng done text; lỗi giữa chừng không có done thành công.
 - [x] Disconnect dừng decode/enqueue tiếp, bỏ kết quả đang chạy; bounded outbound buffer và send timeout, proxy buffering disabled. *(Watcher `http.disconnect` sau khi đọc xong body, cho cả JSON/text; mỗi send ≤ `QUAN_SEND_TIMEOUT_SECONDS`; `X-Accel-Buffering: no`. Thêm D3: `QUAN_MAX_DECODED_SECONDS` giới hạn audio đã decode giữ trong RAM → 429.)*
-- [ ] `Dockerfile`, `.dockerignore`, `compose.yaml`: non-root, minimal copy, pinned code/dependencies, cache volumes, GPU visible, Uvicorn workers=1; model/HF/API secrets không bake vào image. *(Đã viết: base/uv pin digest, FFmpeg pin apt version, user 10001, read-only + tmpfs, key qua compose secret, `stop_grace_period: 70s`; `tests/container/test_image.py`. Chưa kiểm chứng: cần host có Docker + NVIDIA Container Toolkit.)*
-- [x] `README.md`: staging, offline runtime, curl/SDK examples, capabilities, limits, reverse proxy/TLS và recovery hướng dẫn. *(Lệnh local đã chạy thử; phần Docker và ví dụ nginx chưa chạy.)*
+- [x] `Dockerfile`, `.dockerignore`, `compose.yaml`: non-root, minimal copy, pinned code/dependencies, cache volumes, GPU visible, Uvicorn workers=1; model/HF/API secrets không bake vào image. *(Base/uv digest, FFmpeg apt pin, UID 10001, read-only + tmpfs, file secret, `stop_grace_period: 70s`; hai CUDA profiles. `tests/container/test_image.py`: 6 GPU tests pass cu128, gồm offline smoke, auth/errors/overload/isolation, SIGTERM → done/exit 0/drained và restart → ready. Compose config validate; không triển khai service trên host. Xem container-gate.vi.md.)*
+- [x] `README.md`: staging, offline runtime, curl/SDK examples, capabilities, limits, reverse proxy/TLS và recovery hướng dẫn. *(Lệnh local và Docker gate đã chạy; chưa triển khai compose service và ví dụ nginx.)*
 
 **Gate R1:** OpenAI Python SDK thật parse JSON và SSE; JS SDK profile được chọn có integration test tương ứng. Container reload offline, `/ready` sau warm-up, auth/error/overload tests pass; GPU isolation giữa hai fixture không trộn transcript. Smoke so với baseline trên cùng chunk/decoder settings, không hứa parity text nếu segmentation khác.
 
@@ -138,8 +139,7 @@ Thiết kế + số đo P0: [m4-design.vi.md](m4-design.vi.md). CPU: `tests/unit
 - [x] Receiver/sender tách inference, bounded outbound queue, idle/send/session timeouts; session disconnect không hủy GPU ownership sớm.
 
 **Gate R3a:** SDK/schema state-machine tests: nhiều commit trên cùng socket, clear lúc item trước đang infer, bad base64, split samples, flush tail, resample packetized so với reference, item ordering, queue-full, disconnect, hai session isolation. Không quảng cáo word-by-word trước commit hoặc Realtime hội thoại.
-*(Đạt trên CPU + GPU: [m5-design.vi.md](m5-design.vi.md) §9, `docs/baseline/server.json`. Container gate chưa chạy:
-host không có Docker.)*
+*(Đạt trên CPU + GPU: [m5-design.vi.md](m5-design.vi.md) §9, `docs/baseline/server.json`. Container GPU gate đạt với profile cu128 trên RTX 5090; xem [container-gate.vi.md](container-gate.vi.md).)*
 
 ### M6 — Acoustic server VAD và partial tùy chọn (P2, sau M5)
 

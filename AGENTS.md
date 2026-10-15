@@ -1,10 +1,11 @@
 # Deploy QUAN-Transcribe-1.0
 
 - Design: docs/deployment-design.vi.md
-- Plan: docs/implementation-plan.vi.md (M3 REST/SSE done; container gate not yet run: no Docker on this host;
+- Plan: docs/implementation-plan.vi.md (M3 REST/SSE + container GPU gate done: cu128 on RTX 5090; cu126 baseline retained for compatible GPUs;
+  evidence/profiles: docs/container-gate.vi.md; CPU container diagnostics are not the GPU release gate;
   M4 R2a verbose_json/srt/vtt done; R2b word timestamps blocked on a hand-annotated set;
   M5 R3a realtime explicit commit done, CPU + GPU gate passed)
-- M3 design + deviations: docs/m3-design.vi.md
+- M3 design + deviations: docs/m3-design.vi.md; container results: docs/container-gate.vi.md
 - M5 design + results: docs/m5-design.vi.md (§9)
 - Baseline (M0 results, pins, measurements): docs/baseline.vi.md
 - API contract (pinned OpenAI SDK profile, payloads, error codes): docs/api-contract.vi.md
@@ -66,24 +67,30 @@ references/                # read-only upstream sources; never import from or co
 ## Commands
 
 ```bash
-uv sync                                          # Python 3.12, torch 2.14.1+cu126, quan-transcribe@88ddcd2
-uv run scripts/stage_models.py                   # stage pinned models (--verify: offline hash check only)
-uv run scripts/fetch_fixtures.py                 # build fixtures (--verify [--small-only]: hash check only)
-CUDA_VISIBLE_DEVICES=<free gpu> uv run scripts/smoke_inference.py --out docs/baseline/online.json
-CUDA_VISIBLE_DEVICES=<free gpu> HF_HOME=$(mktemp -d) uv run --offline scripts/smoke_inference.py \
+uv sync --extra cu126                            # baseline: Python 3.12, torch 2.14.1+cu126, quan@88ddcd2
+uv sync --extra cu128                            # Blackwell: torch 2.11.0+cu128; then use --extra cu128 on every uv run
+uv run --extra cu126 scripts/stage_models.py                   # stage pinned models (--verify: offline hash check only)
+uv run --extra cu126 scripts/fetch_fixtures.py                 # build fixtures (--verify [--small-only]: hash check only)
+CUDA_VISIBLE_DEVICES=<free gpu> uv run --extra cu126 scripts/smoke_inference.py --out docs/baseline/online.json
+CUDA_VISIBLE_DEVICES=<free gpu> HF_HOME=$(mktemp -d) uv run --extra cu126 --offline scripts/smoke_inference.py \
     --no-network --out docs/baseline/offline.json
-uv run pytest                                    # unit + scheduler + contract; GPU tests skip without CUDA/assets
-CUDA_VISIBLE_DEVICES=<free gpu> uv run pytest tests/gpu
-QUAN_API_KEYS=<key> CUDA_VISIBLE_DEVICES=<free gpu> uv run uvicorn --factory app.main:create_app \
+uv run --extra cu126 pytest                                    # unit + scheduler + contract; GPU tests skip without CUDA/assets
+CUDA_VISIBLE_DEVICES=<free gpu> uv run --extra cu126 pytest tests/gpu
+QUAN_API_KEYS=<key> CUDA_VISIBLE_DEVICES=<free gpu> uv run --extra cu126 uvicorn --factory app.main:create_app \
     --workers 1 --no-access-log --timeout-graceful-shutdown 30 \
     --ws websockets-sansio --ws-max-size 2097152                  # one process per GPU; /ready after warm-up
 (cd tests/contract/js && npm ci && npm test)     # JS SDK contract (tsc --strict + node --test); server tests via pytest
-OPENAI_API_KEY=<key> uv run scripts/smoke_server.py --base-url http://127.0.0.1:<port> --out docs/baseline/server.json
-QUAN_GPU=<free gpu> uv run pytest tests/container   # needs docker + NVIDIA Container Toolkit
-CUDA_VISIBLE_DEVICES=<free gpu> uv run scripts/probe_alignment.py --out docs/baseline/alignment_probe.json  # M4 P0
+OPENAI_API_KEY=<key> uv run --extra cu126 scripts/smoke_server.py --base-url http://127.0.0.1:<port> --out docs/baseline/server.json
+QUAN_GPU=<free gpu> uv run --extra cu126 pytest tests/container   # needs docker + NVIDIA Container Toolkit
+CUDA_VISIBLE_DEVICES=<free gpu> uv run --extra cu126 scripts/probe_alignment.py --out docs/baseline/alignment_probe.json  # M4 P0
 ```
 
 ## Conventions
+
+- CUDA profiles are mutually exclusive extras: always pass `--extra cu126` or `--extra cu128` to uv sync/run.
+  Bare uv commands can select the upstream's unprofiled PyPI torch. cu128 uses torch 2.11.0 (latest published cu128
+  wheel); cu126 keeps 2.14.1. Model/code pins are identical. Docker: `--build-arg TORCH_CUDA=cu128`; Compose:
+  `QUAN_BUILD_CUDA=cu128`; tests: `--container-cuda=cu128`. Build/test selectors are not server config.
 
 - The host GPUs are shared: check `nvidia-smi` and set `CUDA_VISIBLE_DEVICES` to a free GPU.
 - Change a model pin only in `assets/manifest.json`, then run `stage_models.py --update-manifest`. Keep the QUAN code

@@ -1,12 +1,15 @@
 # R1: one gateway process on one GPU (README "Docker").
-#   uv run scripts/stage_models.py                       # on the host, once: ./models
+#   uv run --extra cu126 scripts/stage_models.py                       # on the host, once: ./models
 #   install -m 0400 -o 10001 /dev/stdin secrets/quan_api_keys <<< "<key>"   # one key per line
-#   QUAN_GPU=<free gpu id> docker compose up -d --build
+#   QUAN_BUILD_CUDA=cu128 QUAN_GPU=<free gpu id> docker compose up -d --build
 # The port is bound to localhost only; terminate TLS and expose it through a reverse proxy.
 services:
   quan:
-    build: .
-    image: quan-transcribe:r1
+    build:
+      context: .
+      args:
+        TORCH_CUDA: "${QUAN_BUILD_CUDA:-cu126}"
+    image: quan-transcribe:r1-${QUAN_BUILD_CUDA:-cu126}
     init: true
     deploy:
       resources:

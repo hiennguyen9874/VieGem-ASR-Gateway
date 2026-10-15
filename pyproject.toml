@@ -6,7 +6,6 @@ requires-python = ">=3.12,<3.13"
 dependencies = [
     # Inference code pinned to an exact commit (docs/baseline.vi.md, assets/manifest.json).
     "quan-transcribe @ git+https://github.com/qnguyen3/QUAN-Transcribe@88ddcd2130a3c355d081bc002439f29e5e849060",
-    "torch==2.14.1",
     "transformers==5.19.0",
     "huggingface_hub",
     "safetensors",
@@ -19,6 +18,12 @@ dependencies = [
     "websockets>=13,<16",
 ]
 
+# Select exactly one runtime profile: uv sync --extra cu126 (baseline) or --extra cu128 (Blackwell).
+# PyTorch does not publish 2.14.1 cu128 wheels; keep the existing cu126 baseline unchanged.
+[project.optional-dependencies]
+cu126 = ["torch==2.14.1"]
+cu128 = ["torch==2.11.0"]
+
 [dependency-groups]
 dev = [
     "pytest",
@@ -28,13 +33,22 @@ dev = [
 
 [tool.uv]
 package = false
+conflicts = [[{ extra = "cu126" }, { extra = "cu128" }]]
 
 [tool.uv.sources]
-torch = { index = "pytorch-cu126" }
+torch = [
+    { index = "pytorch-cu126", extra = "cu126" },
+    { index = "pytorch-cu128", extra = "cu128" },
+]
 
 [[tool.uv.index]]
 name = "pytorch-cu126"
 url = "https://download.pytorch.org/whl/cu126"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
 explicit = true
 
 [tool.pytest.ini_options]
