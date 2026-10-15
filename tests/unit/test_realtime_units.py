@@ -1,13 +1,15 @@
 """Pure parts of the realtime adapter (docs/m5-design.vi.md P1): turn buffer, session.update, event dispatch."""
 
+import asyncio
 import json
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
 import soxr
 
 from app.errors import APIError
-from app.realtime import (CLIENT_EVENT_TYPES, PCM_RATE, TurnBuffer, parse_event, parse_session_update,
+from app.realtime import (CLIENT_EVENT_TYPES, PCM_RATE, Session, TurnBuffer, parse_event, parse_session_update,
                           samples_bound, session_object)
 from app.transcription import MODEL_ID, WHISPER_ALIAS
 
@@ -38,6 +40,30 @@ def code(exc_info) -> tuple[str, str | None]:
 
 
 # -- TurnBuffer ---------------------------------------------------------------------------------------------------
+
+def test_empty_appends_do_not_accumulate_reservations():
+    reservations = []
+
+    def reserve(n):
+        reservations.append(n)
+        return lambda: None
+
+    session = Session.__new__(Session)
+    session._ep = SimpleNamespace(audio=SimpleNamespace(reserve=reserve))
+    session._buffer = TurnBuffer(PCM_RATE)
+    session._pending_releases = []
+
+    async def append():
+        for _ in range(10_000):
+            await session._append("")
+        await session._append("AA==")  # one odd byte, no whole sample yet
+        assert not session._pending_releases and not reservations
+        await session._append("AA==")  # completes the sample without losing the odd byte
+        assert session._buffer.samples == 1
+        assert reservations == [1] and len(session._pending_releases) == 1
+
+    asyncio.run(append())
+
 
 def test_random_packetization_equals_one_shot_reference():
     data = pcm16(72_001, seed=1)  # 3 s + one sample

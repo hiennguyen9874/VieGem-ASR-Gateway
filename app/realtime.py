@@ -40,7 +40,7 @@ from app.config import SAMPLE_RATE, Config
 from app.engine import EngineWorker
 from app.errors import (APIError, idle_timeout, input_audio_buffer_commit_empty, input_audio_buffer_full,
                         internal_error, invalid_event, invalid_request, model_not_found, model_not_ready,
-                        send_error, server_busy, session_expired, shutting_down, too_many_pending_items,
+                        request_timeout, send_error, server_busy, session_expired, shutting_down, too_many_pending_items,
                         unknown_parameter, unsupported_event)
 from app.observability import Metrics, log
 from app.scheduler import JobKind, Lane, Scheduler
@@ -397,7 +397,7 @@ class Session:
                 raise invalid_event("Binary frames are not supported; send JSON text events.")
             raw = await _offload(len(text), load_event, text)
             event_id = client_event_id(raw)
-            if isinstance(raw, dict) and raw.get("type") in CLIENT_EVENT_TYPES:
+            if isinstance(raw, dict) and isinstance(raw.get("type"), str) and raw["type"] in CLIENT_EVENT_TYPES:
                 label = raw["type"]
             event = validate_event(raw)
             type_ = event["type"]
@@ -423,7 +423,8 @@ class Session:
             raise invalid_request("invalid_audio", "input_audio_buffer.append: audio is not valid base64.",
                                   "audio") from None
         added = self._buffer.check(len(pcm))
-        self._pending_releases.append(self._ep.audio.reserve(samples_bound(added)))
+        if added:
+            self._pending_releases.append(self._ep.audio.reserve(samples_bound(added)))
         await _offload(len(pcm), self._buffer.append, pcm)
 
     async def _commit(self) -> None:
@@ -476,6 +477,8 @@ class Session:
         joiner = Joiner()
         outcome = "completed"
         try:
+            if time.monotonic() >= item.committed_at + c.request_timeout_seconds:
+                raise request_timeout()
             results = run_chunks(self._lane, item.wav, spans, item.committed_at + c.request_timeout_seconds,
                                  c.queue_max_jobs_per_lane)
             async with aclosing(results):
@@ -509,7 +512,13 @@ class Session:
 async def _offload(size: int, fn, *args, **kwargs):
     """Run CPU work on large client messages in a thread so the event loop keeps serving other sessions."""
     if size > OFFLOAD_CHARS:
-        return await asyncio.to_thread(fn, *args, **kwargs)
+        task = asyncio.create_task(asyncio.to_thread(fn, *args, **kwargs))
+        try:
+            return await asyncio.shield(task)
+        except asyncio.CancelledError:
+            # A running thread cannot be cancelled; retain its audio reservation until it finishes.
+            await asyncio.gather(task, return_exceptions=True)
+            raise
     return fn(*args, **kwargs)
 
 

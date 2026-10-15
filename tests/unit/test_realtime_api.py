@@ -205,6 +205,9 @@ def test_invalid_and_unsupported_events_keep_the_socket(srv):
     assert error(ws.recv())[0] == "invalid_event"
     ws.conn.send("{not json")
     assert error(ws.recv()) == ("invalid_event", None)
+    for type_ in ([], {}, None, 123):
+        ws.conn.send(json.dumps({"type": type_}))
+        assert error(ws.recv()) == ("invalid_event", "type")
     ws.send("response.create", event_id="r1")
     e = ws.recv()
     assert error(e) == ("unsupported_event", "type") and e["error"]["event_id"] == "r1"
@@ -226,7 +229,7 @@ def test_invalid_and_unsupported_events_keep_the_socket(srv):
     ws.send("input_audio_buffer.commit")
     assert ws.turn()[2]["transcript"] == "".join(expected_turn(pcm, CHUNK))
     metrics = srv.client.get("/metrics").text
-    assert 'quan_realtime_client_events_total{type="invalid"} 3.0' in metrics
+    assert 'quan_realtime_client_events_total{type="invalid"} 7.0' in metrics
     assert 'quan_realtime_client_events_total{type="response.create"} 1.0' in metrics
     ws.close()
     settled(srv)
@@ -279,6 +282,60 @@ def test_failed_items_do_not_stop_the_session():
         assert ws.turn()[2]["transcript"] == "".join(expected_turn(pcm, CHUNK))
         assert engine.max_active == 1
         ws.close()
+        settled(s)
+
+
+def test_short_queued_item_obeys_its_commit_deadline():
+    engine = FakeEngine(text_fn=name)
+    with serve(engine, request_timeout_seconds=0.3) as s:
+        ws = WS(s)
+        engine.gate.clear()
+        try:
+            ws.append(pcm24(0.5, seed=31))
+            ws.send("input_audio_buffer.commit")
+            ws.until("conversation.item.added")
+            assert engine.started.acquire(timeout=5)
+            ws.append(pcm24(0.05, seed=32))
+            ws.send("input_audio_buffer.commit")
+            second = ws.until("conversation.item.added")[-1]
+            first_failed = ws.until("conversation.item.input_audio_transcription.failed")[-1]
+            assert first_failed["error"]["code"] == "request_timeout"
+            time.sleep(0.4)  # second item expires while the first call still owns the lane
+            engine.gate.set()
+            second_failed = ws.until("conversation.item.input_audio_transcription.failed")[-1]
+            assert second_failed["item_id"] == second["item"]["id"]
+            assert second_failed["error"]["code"] == "request_timeout"
+        finally:
+            engine.gate.set()
+            ws.close()
+        settled(s)
+
+
+def test_session_expiry_waits_for_offloaded_append(monkeypatch):
+    from app.realtime import OFFLOAD_CHARS, TurnBuffer
+
+    started, finish = threading.Event(), threading.Event()
+    append = TurnBuffer.append
+
+    def blocked_append(buffer, pcm):
+        started.set()
+        assert finish.wait(5)
+        append(buffer, pcm)
+
+    monkeypatch.setattr(TurnBuffer, "append", blocked_append)
+    with serve(max_session_seconds=0.3) as s:
+        ws = WS(s)
+        try:
+            ws.append(b"\x00\x00" * OFFLOAD_CHARS, packet=2 * OFFLOAD_CHARS)
+            assert started.wait(5)
+            time.sleep(0.5)  # expiry cancels the receiver, but its thread still owns audio
+            assert s.app.state.audio._held > 0
+            assert s.app.state.scheduler._lanes == 1
+            finish.set()
+            assert error(ws.recv())[0] == "session_expired"
+        finally:
+            finish.set()
+            ws.close()
         settled(s)
 
 
