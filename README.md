@@ -180,4 +180,4 @@ uv run --extra cu126 pytest                                         # CPU: unit,
 QUAN_GPU=0 uv run --extra cu128 pytest tests/container --container-cuda=cu128   # gate image trên GPU
 ```
 
-Chi tiết gate image: [docs/container-gate.vi.md](docs/container-gate.vi.md). Lệnh phát triển: `AGENTS.md`.
+Chi tiết gate image: [docs/container-gate.vi.md](docs/container-gate.vi.md). Lệnh phát triển: [docs/agents/commands.md](docs/agents/commands.md).
