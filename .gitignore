@@ -226,9 +226,6 @@ __marimo__/
 /fixtures-large/
 node_modules/
 
-# Upstream reference clones (nested git repos, multi-GB); see AGENTS.md
-/references/
-
 # Gateway API keys for compose.yaml (secrets/quan_api_keys)
 /secrets/
 
