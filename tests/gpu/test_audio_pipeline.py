@@ -1,4 +1,4 @@
-"""M2 pipeline on the real engine: FFmpeg decode -> quiet splitter -> scheduler lane -> QUAN, chunk texts joined
+"""M2 pipeline on the real engine: FFmpeg decode -> quiet splitter -> scheduler lane -> Model, chunk texts joined
 with one space (empty chunks add nothing).
 
 - WAV at 16 kHz float decodes bit-exactly, so the transcript must equal the M0 baseline.
@@ -22,7 +22,7 @@ import torch
 
 from app.audio import AudioIngress
 from app.chunking import MIN_AUDIO_SAMPLES, split
-from app.engine import EngineState, EngineWorker, QuanEngine
+from app.engine import EngineState, EngineWorker, VieGemEngine
 from app.observability import Metrics
 from app.scheduler import JobKind, Scheduler
 from scripts.smoke_inference import wer
@@ -60,7 +60,7 @@ def test_decoded_and_chunked_audio_transcribes_like_the_baseline(tmp_path):
     async def main():
         cfg = config(models_dir=MODELS)
         metrics = Metrics()
-        worker = EngineWorker(QuanEngine(MODELS, "cuda", cfg.max_chunk_seconds), cfg.infer_hang_seconds, metrics)
+        worker = EngineWorker(VieGemEngine(MODELS, "cuda", cfg.max_chunk_seconds), cfg.infer_hang_seconds, metrics)
         scheduler = Scheduler(worker, cfg, metrics)
         ingress = AudioIngress(cfg, metrics)
         worker.start()

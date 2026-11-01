@@ -1,8 +1,7 @@
 # VieGem ASR Gateway
 
-Server nhận dạng tiếng nói tiếng Việt cho [QUAN-Transcribe-1.0](https://huggingface.co/qnguyen3/QUAN-Transcribe-1.0),
-triển khai bằng Docker, với một **tập con** API OpenAI. Hiện gateway vẫn phục vụ model QUAN với id
-`quan-transcribe-1.0`; VieGem là tên gateway:
+Server nhận dạng tiếng nói tiếng Việt cho [VieGem-ASR](https://huggingface.co/5CD-AI/VieGem-ASR) (model id
+`viegem-asr`), triển khai bằng Docker, với một **tập con** API OpenAI:
 
 - `GET /v1/models`, `GET /v1/models/{id}`
 - `POST /v1/audio/transcriptions`: `json`, `text`, SSE (`stream=true`), `verbose_json`, `srt`, `vtt`
@@ -16,7 +15,10 @@ Giới hạn cần biết:
 - `srt`/`vtt` có thời gian từ đường CTC greedy (start của cue có thể trễ ~1 âm tiết). `verbose_json` không có
   `segments`; word timestamps chưa bật.
 - Realtime: transcript chỉ có sau `input_audio_buffer.commit`; không có partial, không có VAD.
-- Alias `whisper-1` (tắt mặc định, `VIEGEM_WHISPER_ALIAS=true`) chỉ để client cũ chạy được: vẫn là model QUAN.
+- Một chunk toàn im lặng số (0 hoặc gần 0, từ ~1 s) có thể cho ra một từ sai (vd. `"vaccine"`): đặc tính của model,
+  gateway chưa lọc ([baseline §5](docs/baseline.vi.md)).
+- Alias `whisper-1` (tắt mặc định, `VIEGEM_WHISPER_ALIAS=true`) chỉ để client cũ chạy được: vẫn là VieGem-ASR.
+- Id cũ `quan-transcribe-1.0` không còn được phục vụ: 404 `model_not_found`.
 
 Tài liệu: [kiến trúc](docs/deployment-design.vi.md) · [API contract](docs/api-contract.vi.md) ·
 [baseline và pins](docs/baseline.vi.md) · [kiểm định image](docs/container-gate.vi.md) ·
@@ -24,9 +26,11 @@ Tài liệu: [kiến trúc](docs/deployment-design.vi.md) · [API contract](docs
 
 ## 1. Yêu cầu
 
-- Linux, Docker Engine + Compose v2, NVIDIA Container Toolkit, một GPU NVIDIA (~2.5 GB VRAM cho mỗi instance).
+- Linux, Docker Engine + Compose v2, NVIDIA Container Toolkit, một GPU NVIDIA (~3 GB VRAM cho mỗi instance).
 - [uv](https://docs.astral.sh/uv/) trên host, chỉ để tải model (staging) và chạy smoke test.
-- Chấp nhận [Gemma Terms of Use](https://ai.google.dev/gemma/terms) (weights QUAN và base `google/embeddinggemma-2`).
+- **Chỉ dùng phi thương mại.** Weights VieGem-ASR theo [CC-BY-NC-SA-4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/)
+  và phải tuân thủ [Gemma Terms of Use](https://ai.google.dev/gemma/terms) (cùng base `google/embeddinggemma-2`).
+  Code inference vendored trong `app/viegem/` cũng theo CC-BY-NC-SA-4.0 (`app/viegem/LICENSE`, `NOTICE`).
 
 Chọn **một** CUDA profile theo GPU:
 
@@ -59,8 +63,8 @@ curl -s 127.0.0.1:18000/ready                                   # {"status":"rea
 # 5. Thử nhanh với file mẫu có sẵn trong repo (tests/fixtures/vi_a.wav, 8.9 s, FLEURS, CC BY 4.0)
 curl -s 127.0.0.1:18000/v1/audio/transcriptions \
     -H "Authorization: Bearer $(sudo head -1 secrets/viegem_api_keys)" \
-    -F model=quan-transcribe-1.0 -F file=@tests/fixtures/vi_a.wav
-# {"text":"các sản phẩm thủ công có thể được coi là độ cổ mặc dù tuổi đời của chúng ch trẻ hơn rất nhiều ..."}
+    -F model=viegem-asr -F file=@tests/fixtures/vi_a.wav
+# {"text":"các sản phẩm thủ công có thể được coi là đồ cổ mặc dù tuổi đời của chúng trẻ hơn rất nhiều ..."}
 
 # 6. Smoke test (tùy chọn): mọi format + Realtime, so với baseline
 OPENAI_API_KEY=$(sudo cat secrets/viegem_api_keys | head -1) \
@@ -92,11 +96,11 @@ HTTPS của bạn với: SSE không buffer, hỗ trợ WebSocket upgrade, read t
 KEY=$(sudo cat secrets/viegem_api_keys | head -1)
 curl -s 127.0.0.1:18000/v1/models -H "Authorization: Bearer $KEY"
 curl -s 127.0.0.1:18000/v1/audio/transcriptions -H "Authorization: Bearer $KEY" \
-    -F model=quan-transcribe-1.0 -F file=@tests/fixtures/vi_a.wav
+    -F model=viegem-asr -F file=@tests/fixtures/vi_a.wav
 curl -sN 127.0.0.1:18000/v1/audio/transcriptions -H "Authorization: Bearer $KEY" \
-    -F model=quan-transcribe-1.0 -F stream=true -F file=@tests/fixtures/vi_a.wav
+    -F model=viegem-asr -F stream=true -F file=@tests/fixtures/vi_a.wav
 curl -s 127.0.0.1:18000/v1/audio/transcriptions -H "Authorization: Bearer $KEY" \
-    -F model=quan-transcribe-1.0 -F response_format=srt -F file=@tests/fixtures/vi_a.wav   # text, vtt, verbose_json
+    -F model=viegem-asr -F response_format=srt -F file=@tests/fixtures/vi_a.wav   # text, vtt, verbose_json
 ```
 
 OpenAI Python SDK (đã kiểm thử `openai==3.31.0`; JS `openai@7.33.0`):
@@ -106,9 +110,9 @@ from openai import OpenAI
 
 client = OpenAI(base_url="http://127.0.0.1:18000/v1", api_key="<gateway key>")
 with open("audio.mp3", "rb") as f:
-    print(client.audio.transcriptions.create(file=f, model="quan-transcribe-1.0").text)
+    print(client.audio.transcriptions.create(file=f, model="viegem-asr").text)
 with open("audio.mp3", "rb") as f:
-    for event in client.audio.transcriptions.create(file=f, model="quan-transcribe-1.0", stream=True):
+    for event in client.audio.transcriptions.create(file=f, model="viegem-asr", stream=True):
         print(event.type, getattr(event, "delta", None) or getattr(event, "text", ""))
 ```
 
@@ -118,7 +122,7 @@ một item với các `delta` (một mỗi chunk ≤ 30 s) rồi `completed`.
 ```python
 import base64
 
-with client.realtime.connect(model="quan-transcribe-1.0") as conn:
+with client.realtime.connect(model="viegem-asr") as conn:
     conn.recv()                                            # session.created
     for packet in pcm16_24k_packets:                       # bytes, ví dụ 20–200 ms mỗi packet
         conn.input_audio_buffer.append(audio=base64.b64encode(packet).decode())

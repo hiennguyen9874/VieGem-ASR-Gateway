@@ -20,17 +20,11 @@ COMMIT = re.compile(r"^[0-9a-f]{40}$")
 
 def test_asset_manifest_pins_commits_and_hashes():
     manifest = json.loads((ROOT / "assets/manifest.json").read_text())
-    assert COMMIT.match(manifest["code"]["quan-transcribe"]["commit"])
+    assert set(manifest["models"]) == {"embeddinggemma-2", "viegem-asr"}
     for entry in manifest["models"].values():
         assert COMMIT.match(entry["revision"])
         for meta in entry["files"].values():
             assert re.fullmatch(r"[0-9a-f]{64}", meta["sha256"]) and meta["size"] > 0
-
-
-def test_pyproject_pins_quan_code_to_manifest_commit():
-    deps = tomllib.loads((ROOT / "pyproject.toml").read_text())["project"]["dependencies"]
-    commit = json.loads((ROOT / "assets/manifest.json").read_text())["code"]["quan-transcribe"]["commit"]
-    assert any(d.startswith("quan-transcribe @ git+") and d.endswith(f"@{commit}") for d in deps)
 
 
 def test_cuda_profiles_are_exclusive_and_locked():
@@ -77,14 +71,14 @@ def test_compose_identity_and_server_environment():
 def test_staging_uses_viegem_models_dir_and_dest_override(tmp_path):
     env = {**os.environ, "VIEGEM_MODELS_DIR": str(tmp_path / "models")}
     env["QUAN_MODELS_DIR"] = str(tmp_path / "legacy")
-    command = [sys.executable, "scripts/stage_models.py", "--verify", "--only", "quan-transcribe-1.0"]
+    command = [sys.executable, "scripts/stage_models.py", "--verify", "--only", "viegem-asr"]
     result = subprocess.run(command, cwd=ROOT, env=env, capture_output=True, text=True)
     assert result.returncode == 1
-    assert str(tmp_path / "models" / "quan-transcribe-1.0") in result.stderr
+    assert str(tmp_path / "models" / "viegem-asr") in result.stderr
     override = tmp_path / "other"
     result = subprocess.run([*command, "--dest", str(override)], cwd=ROOT, env=env, capture_output=True, text=True)
     assert result.returncode == 1
-    assert str(override / "quan-transcribe-1.0") in result.stderr
+    assert str(override / "viegem-asr") in result.stderr
 
 
 def test_small_fixtures_match_manifest():

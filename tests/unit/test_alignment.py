@@ -11,7 +11,6 @@ import random
 import numpy as np
 import pytest
 import torch
-from quan_transcribe.model import greedy_decode
 
 from app.alignment import (
     align,
@@ -27,6 +26,7 @@ from app.alignment import (
 from app.chunking import Span
 from app.engine import ChunkResult, ctc_path
 from app.transcription import Joiner
+from app.viegem.model import greedy_decode
 from tests.fake_engine import fake_result, PIECES
 
 # unit ids: 0 blank, 1 unk

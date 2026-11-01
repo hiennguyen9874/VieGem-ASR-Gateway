@@ -82,6 +82,7 @@ def test_valid(fields, expected):
     # 13. model not served
     ([("model", "whisper-1")], (404, "model_not_found", "model")),
     ([("model", "gpt-4o-transcribe")], (404, "model_not_found", "model")),
+    ([("model", "quan-transcribe-1.0")], (404, "model_not_found", "model")),
 ])
 def test_errors(fields, expected):
     assert error(fields) == expected

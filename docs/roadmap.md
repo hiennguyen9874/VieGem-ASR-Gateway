@@ -69,6 +69,9 @@ regardless of chunk length, see [baseline.vi.md](baseline.vi.md) §4), so §4 op
   blank endpoint as VAD. `semantic_vad` stays rejected.
 - [ ] Optional: partial text before commit via a stable-prefix decoder (append-only deltas, defined final
   correction policy), only with full integration tests.
+- [ ] Candidate for partials: VieGem-ASR's own streaming mode (`streaming=True`: reader attention limited to 0.48 s
+  chunks, no look-ahead; model card FLEURS WER 9.02 vs 7.33 full context). The gateway decodes full context only;
+  serving this mode needs its own gate (WER, latency, final-correction policy).
 
 ### 4. Scale and performance
 
@@ -95,5 +98,5 @@ Not provided by this model; would need other engines behind the gateway:
 - `/v1/audio/speech` (TTS), chat/responses, Realtime conversation, WebRTC/SIP.
 - Diarization (`diarized_json`, `known_speaker_*`), `prompt`/keywords biasing, `include[]=logprobs`.
 - `verbose_json.segments`: the SDK schema requires Whisper-only fields (`avg_logprob`, `no_speech_prob`, `tokens`)
-  that QUAN cannot fill with real data.
+  that the Model cannot fill with real data.
 - TLS, CORS and per-client rate limiting inside the gateway: provided by the infrastructure in front of it.

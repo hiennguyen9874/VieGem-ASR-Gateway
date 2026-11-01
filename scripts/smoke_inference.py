@@ -4,8 +4,9 @@
     CUDA_VISIBLE_DEVICES=<gpu> HF_HOME=$(mktemp -d) uv run --extra cu126 --offline scripts/smoke_inference.py --no-network \
         --out docs/baseline/offline.json
 
-Loads only staged assets (app/quan_loader.py) after verifying them against assets/manifest.json. Decoding is greedy
-(no LM) with the reference defaults below. --no-network sets HF_HUB_OFFLINE and installs an audit hook that fails
+Loads only staged assets (app/viegem_loader.py) after verifying them against assets/manifest.json. Decoding is greedy
+(no LM, bf16 autocast on CUDA, as the model card); long audio is cut by the gateway's splitter (app/chunking.py) and
+the chunks are batched. --no-network sets HF_HUB_OFFLINE and installs an audit hook that fails
 any socket connection or DNS lookup made by this process, so a hidden Hub access is an error, not a silent download.
 Outputs a JSON report; exits non-zero when a gate check fails.
 """
@@ -29,6 +30,8 @@ from scripts.scoring import wer  # noqa: E402
 DECODER = {
     "decoder": "greedy",
     "use_lm": False,
+    "autocast": "bf16",
+    "splitter": "app.chunking.split",
     "chunk_seconds": 30.0,
     "batch_seconds": 600.0,
     "left_chunks": None,
@@ -132,7 +135,9 @@ def main() -> int:
     import soundfile as sf
     import torch
 
-    from app.quan_loader import load_quan
+    from app.chunking import split
+    from app.viegem.model import greedy_decode
+    from app.viegem_loader import load_viegem
     from scripts.fetch_fixtures import LARGE_DIR
     from scripts.fetch_fixtures import MANIFEST as FIXTURES_MANIFEST
     from scripts.fetch_fixtures import SMALL_DIR
@@ -154,17 +159,14 @@ def main() -> int:
         "environment": environment(torch),
         "network_blocked": args.no_network,
         "hf_home": os.environ.get("HF_HOME"),
-        "revisions": {
-            "code": assets["code"],
-            "models": {k: v["revision"] for k, v in assets["models"].items()},
-        },
+        "revisions": {"models": {k: v["revision"] for k, v in assets["models"].items()}},
         "decoder": DECODER,
     }
     on_cuda = torch.device(args.device).type == "cuda"
     sync = torch.cuda.synchronize if on_cuda else (lambda: None)
 
     t0 = time.perf_counter()
-    asr = load_quan(args.models_dir, args.device)
+    model, tokenizer, units = load_viegem(args.models_dir, args.device)
     sync()
     load = {"cold_load_s": round(time.perf_counter() - t0, 2)} | rss_mb()
     if on_cuda:
@@ -173,15 +175,40 @@ def main() -> int:
     report["load"] = load
     print("load", load, flush=True)
 
+    device = torch.device(args.device)
+
+    def run(pieces, streaming=False):
+        """One padded forward over a batch of waveforms -> one greedy text per waveform."""
+        lens = torch.tensor([len(w) for w in pieces], dtype=torch.long)
+        x = torch.zeros(len(pieces), int(lens.max()), dtype=torch.float32)
+        for i, w in enumerate(pieces):
+            x[i, : len(w)] = torch.from_numpy(w)
+        with torch.no_grad(), torch.autocast(device.type, dtype=torch.bfloat16, enabled=on_cuda):
+            logits, out_lens = model(
+                x.to(device),
+                lens.to(device),
+                streaming=streaming,
+                left_chunks=DECODER["left_chunks"],
+            )
+        return [units.decode(tokenizer, u) for u in greedy_decode(logits, out_lens)]
+
     def transcribe(wav, streaming):
-        return asr.transcribe(
-            wav,
-            streaming=streaming,
-            left_chunks=DECODER["left_chunks"],
-            chunk_seconds=DECODER["chunk_seconds"],
-            batch_seconds=DECODER["batch_seconds"],
-            use_lm=False,
-        )
+        """Chunks <= chunk_seconds (<= 100 ms of audio -> no chunk, ""), batched up to batch_seconds of padding."""
+        spans = split(wav, int(DECODER["chunk_seconds"] * 16000))
+        pieces = [wav[s.start : s.end] for s in spans]
+        texts, batch = [], []
+        for p in pieces + [None]:
+            if (
+                p is not None
+                and (len(batch) + 1) * max(map(len, batch + [p]))
+                <= DECODER["batch_seconds"] * 16000
+            ):
+                batch.append(p)
+                continue
+            if batch:
+                texts += run(batch, streaming)
+            batch = [p] if p is not None else []
+        return " ".join(t for t in texts if t)
 
     wavs = {}
     for name, e in fixtures["files"].items():
@@ -231,7 +258,7 @@ def main() -> int:
 
     # Batch of two different clips must give the same text as each clip alone (no cross-talk through padding).
     a, b = wavs["vi_a.wav"], wavs["vi_b.wav"]
-    batched = asr.transcribe([a, b], use_lm=False)
+    batched = run([a, b])
     report["batch_isolation"] = {
         "equal_to_single": batched
         == [results["vi_a.wav:full"]["text"], results["vi_b.wav:full"]["text"]],
@@ -240,12 +267,12 @@ def main() -> int:
     if not report["batch_isolation"]["equal_to_single"]:
         failures.append("batched [vi_a, vi_b] differs from single-clip results")
 
-    # Frontend minimum: call the model directly (transcribe() drops pieces <= 1600 samples via split_quiet).
+    # Frontend minimum: call the model directly (transcribe() yields "" for audio <= 1600 samples, as the gateway).
     speech = wavs["vi_a.wav"][32000:]
     probe = {}
     for n in SHORT_PROBE:
         try:
-            probe[n] = {"text": asr._run([speech[:n]], False, None, None, 32)[0], "error": None}
+            probe[n] = {"text": run([speech[:n]])[0], "error": None}
         except Exception as e:
             probe[n] = {"text": None, "error": f"{type(e).__name__}: {str(e)[:200]}"}
         probe[n]["transcribe"] = transcribe(speech[:n].copy(), False)

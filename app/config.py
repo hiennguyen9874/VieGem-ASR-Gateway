@@ -13,7 +13,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
-SAMPLE_RATE = 16000  # QUAN input rate; queue budgets are counted in 16 kHz samples
+SAMPLE_RATE = 16000  # Model input rate; queue budgets are counted in 16 kHz samples
 PREFIX = "VIEGEM_"
 MIN_API_KEY_LENGTH = 16
 MIN_CHUNK_SECONDS = 1.0

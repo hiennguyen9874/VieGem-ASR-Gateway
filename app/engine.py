@@ -1,6 +1,6 @@
-"""The only code that calls QUAN, and the single thread allowed to run it.
+"""The only code that calls the Model (VieGem-ASR), and the single thread allowed to run it.
 
-`QuanCTC._acts` is mutable hook state, so every load/warm-up/inference on the model instance runs on one dedicated
+`CTCModel._acts` is mutable hook state, so every load/warm-up/inference on the model instance runs on one dedicated
 worker thread (`EngineWorker`). Endpoints and sessions never touch the model; they go through `app.scheduler`, which
 hands the worker at most one job at a time.
 
@@ -46,7 +46,7 @@ class ChunkResult(NamedTuple):
 
 
 def ctc_path(best: np.ndarray) -> tuple[tuple[int, ...], tuple[int, ...], tuple[int, ...]]:
-    """Collapse an argmax frame sequence like `quan_transcribe.model.greedy_decode`, keeping each unit's frames."""
+    """Collapse an argmax frame sequence like `app.viegem.model.greedy_decode`, keeping each unit's frames."""
     best = np.asarray(best)
     if best.size == 0:
         return (), (), ()
@@ -69,37 +69,54 @@ class Engine(Protocol):
         ...
 
 
-class QuanEngine:
-    """Greedy, full-context decoding of one 16 kHz mono chunk (the M0 baseline decoder settings, no LM)."""
+class VieGemEngine:
+    """Greedy, full-context decoding of one 16 kHz mono chunk with bf16 autocast on CUDA (no LM)."""
 
     def __init__(self, models_dir: Path, device: str, warmup_seconds: float):
-        self._models_dir, self._device, self._warmup_seconds = models_dir, device, warmup_seconds
-        self._asr = None
+        self._models_dir, self._warmup_seconds = models_dir, warmup_seconds
+        self._device = device
+        self._model = self._tokenizer = self._units = None
 
     def load(self) -> None:
-        from app.quan_loader import load_quan
+        import torch
 
-        self._asr = load_quan(self._models_dir, self._device)
+        from app.viegem_loader import load_viegem
+
+        self._device = torch.device(self._device)
+        self._model, self._tokenizer, self._units = load_viegem(self._models_dir, self._device)
 
     def warmup(self) -> None:
         """Also used to recover after a failed call. Running the longest allowed chunk reserves its peak memory."""
         import torch
 
-        if self._asr.device.type == "cuda":
+        if self._device.type == "cuda":
             torch.cuda.empty_cache()
         self.transcribe(np.zeros(int(self._warmup_seconds * SAMPLE_RATE), dtype=np.float32))
 
+    def forward(self, wav: np.ndarray):
+        """Logits (1, T, V) and valid frame counts (1,) of one chunk, as in the model card's usage."""
+        import torch
+
+        x = torch.from_numpy(wav).unsqueeze(0).to(self._device)
+        lens = torch.tensor([len(wav)], device=self._device)
+        on_cuda = self._device.type == "cuda"
+        with (
+            torch.no_grad(),
+            torch.autocast(self._device.type, dtype=torch.bfloat16, enabled=on_cuda),
+        ):
+            return self._model(x, lens, streaming=False)
+
     def transcribe(self, wav: np.ndarray) -> ChunkResult:
-        # The reference's greedy batch decode step (`_run` with decoder=None) without `split_quiet` (which silently
-        # drops pieces <= 100 ms; chunking is the caller's job), keeping the best path for timestamps. The text is
-        # decoded from the same units as `_run`, so it equals the baseline.
-        logits, lens = self._asr._forward([wav], False, None)
+        # Chunking is the caller's job; the greedy best path is kept for timestamps and the text is decoded from it.
+        logits, lens = self.forward(wav)
         frames = int(lens[0])
         units, first, last = ctc_path(logits[0, :frames].argmax(-1).cpu().numpy())
-        return ChunkResult(self._asr.decode_units(list(units)), units, first, last, frames)
+        return ChunkResult(
+            self._units.decode(self._tokenizer, list(units)), units, first, last, frames
+        )
 
     def pieces(self) -> tuple[str, ...]:
-        return ("", "") + tuple(self._asr.tokenizer.convert_ids_to_tokens(self._asr.gemma_ids))
+        return ("", "") + tuple(self._tokenizer.convert_ids_to_tokens(self._units.gemma_ids))
 
 
 def check_waveform(wav: np.ndarray) -> None:

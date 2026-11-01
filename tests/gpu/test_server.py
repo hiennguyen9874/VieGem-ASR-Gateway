@@ -17,7 +17,7 @@ import pytest
 import soundfile as sf
 import torch
 
-from app.engine import QuanEngine
+from app.engine import VieGemEngine
 from scripts.smoke_inference import wer
 from tests.live_server import parse_cues, serve, SR, wav_file
 
@@ -26,7 +26,7 @@ MODELS = Path(os.environ.get("VIEGEM_MODELS_DIR", ROOT / "models"))
 FIXTURES = ROOT / "tests/fixtures"
 LONG = ROOT / "fixtures-large/vi_long.wav"
 URL = "/v1/audio/transcriptions"
-MODEL = "quan-transcribe-1.0"
+MODEL = "viegem-asr"
 pytestmark = [
     pytest.mark.gpu,
     pytest.mark.skipif(not torch.cuda.is_available(), reason="needs CUDA"),
@@ -36,7 +36,7 @@ pytestmark = [
 
 @pytest.fixture(scope="module")
 def srv():
-    engine = QuanEngine(MODELS, "cuda", warmup_seconds=30.0)
+    engine = VieGemEngine(MODELS, "cuda", warmup_seconds=30.0)
     with serve(engine, ready_timeout=300, http_timeout=300, models_dir=MODELS) as s:
         yield s
 
@@ -76,7 +76,7 @@ def test_transcripts_match_baseline_in_every_format(srv):
     assert timed(srv, FIXTURES / "silence_2s.wav", "srt") == []
 
 
-GAP_TOLERANCE_S = 1.5  # alignment probe: cue edges measured within 1.16 s of a zero gap (clip silence)
+GAP_TOLERANCE_S = 1.5  # alignment probe: cue edges measured within 1.24 s of a zero gap (clip silence)
 
 
 def test_cues_respect_known_silences_across_a_chunk_boundary(srv, tmp_path):

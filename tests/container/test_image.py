@@ -107,7 +107,7 @@ import io, json, os, urllib.request, uuid, wave
 src = wave.open('/w/fixtures-large/vi_long.wav'); frames = src.readframes(src.getnframes())
 buf = io.BytesIO(); out = wave.open(buf, 'wb'); out.setparams(src.getparams()); out.writeframes(frames * 6); out.close()
 b = uuid.uuid4().hex
-body = (f'--{b}\\r\\nContent-Disposition: form-data; name="model"\\r\\n\\r\\nquan-transcribe-1.0\\r\\n'
+body = (f'--{b}\\r\\nContent-Disposition: form-data; name="model"\\r\\n\\r\\nviegem-asr\\r\\n'
         f'--{b}\\r\\nContent-Disposition: form-data; name="stream"\\r\\n\\r\\ntrue\\r\\n'
         f'--{b}\\r\\nContent-Disposition: form-data; name="file"; filename="a.wav"\\r\\n\\r\\n').encode()
 body += buf.getvalue() + f'\\r\\n--{b}--\\r\\n'.encode()
@@ -194,7 +194,7 @@ audio = open('/w/tests/fixtures/vi_a.wav', 'rb').read()
 error(lambda: gw.transcribe(audio, model='not-a-model'), 404, 'model_not_found')
 error(lambda: gw.transcribe(b'not audio'), 400, 'invalid_audio')
 headers = {'Authorization': 'Bearer ' + gw.key}
-url = 'ws://127.0.0.1:18000/v1/realtime?model=quan-transcribe-1.0'
+url = 'ws://127.0.0.1:18000/v1/realtime?model=viegem-asr'
 with connect(url, additional_headers=headers) as a, connect(url, additional_headers=headers) as b:
     assert json.loads(a.recv(30))['type'] == 'session.created'
     assert json.loads(b.recv(30))['type'] == 'session.created'

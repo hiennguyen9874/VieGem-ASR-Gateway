@@ -2,24 +2,23 @@
 
 Read the section for each area you touch before editing it. File roles: [code-map.md](code-map.md).
 
-## Inference path (`engine.py`, `scheduler.py`, `quan_loader.py`)
+## Inference path (`engine.py`, `scheduler.py`, `viegem_loader.py`)
 
-- Load the model only through `app/quan_loader.load_quan`. `QuanTranscribe.from_pretrained` resolves the base
-  model at Hub `main`, so its result is unpinned.
-- `EngineWorker` is the single thread that calls QUAN (`QuanCTC._acts` is mutable hook state). Work reaches it as
+- Load the Model only through `app/viegem_loader.load_viegem`: staged local files, weights-only checkpoint, no Hub
+  id resolution.
+- `EngineWorker` is the single thread that calls the Model (`CTCModel._acts` is mutable hook state). Work reaches it as
   jobs (one per chunk) on `Scheduler` lanes (one per request or realtime session).
 - A lane holds at most `VIEGEM_QUEUE_MAX_JOBS_PER_LANE` (2) queued chunks; long files are fed incrementally. LIVE
   lanes get bounded priority (`live_priority_ratio`).
 - Cancel drops queued chunks and discards the running chunk's result. A running kernel finishes; the worker and
   budgets are released only when the real call returns.
 
-## Vendored VieGem inference (not yet served)
+## Vendored VieGem inference (`app/viegem/`)
 
 - `app/viegem/` is the CC-BY-NC-SA-4.0 licence boundary; retain its LICENSE and update NOTICE when changing it.
 - Keep `references/VieGem-ASR` read-only and pinned to the manifest checkpoint revision. After changes, run
   `tests/gpu/test_viegem_parity.py` against staged assets on a free GPU; exact bf16 logits must match upstream
   for full-context and streaming inference. Preserve top-k encoder `requires_grad` flags.
-- `app/viegem_loader.py` uses staged local files and weights-only checkpoint loading; it does not switch the server.
 
 ## Audio (`audio.py`, `chunking.py`)
 
@@ -64,8 +63,9 @@ Read the section for each area you touch before editing it. File roles: [code-ma
 
 ## Pins, dependencies, image
 
-- Change a model pin only in `assets/manifest.json`, then run `scripts/stage_models.py --update-manifest`. The QUAN
-  code commit in `pyproject.toml` must equal the manifest (`tests/unit/test_manifests.py`).
+- Change a model pin only in `assets/manifest.json`, then run `scripts/stage_models.py --update-manifest`. The
+  vendored `app/viegem/` code and `references/VieGem-ASR` stay at the manifest's `viegem-asr` revision
+  (`tests/gpu/test_viegem_parity.py`).
 - CUDA profiles are mutually exclusive extras with identical model/code pins: cu126 = torch 2.14.1, cu128 = torch
   2.11.0 (the latest published cu128 wheel). Profile selectors: Docker `--build-arg TORCH_CUDA=cu128`, Compose
   `VIEGEM_BUILD_CUDA=cu128`, tests `--container-cuda=cu128`.

@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-# R1 image of the VieGem gateway serving QUAN: one Uvicorn worker = one model instance = one GPU.
+# R1 image of the VieGem gateway serving VieGem-ASR: one Uvicorn worker = one model instance = one GPU.
 # Models are staged on the host (scripts/stage_models.py) and mounted read-only at /models at runtime; no model,
 # HF token or API key is ever part of the image. Build: docker build -t viegem-asr-gateway:r1 .
 #
@@ -12,7 +12,7 @@ FROM ghcr.io/astral-sh/uv:0.12.9@sha256:8b940d3a9d65bed080436972241af2e21c84b5e8
 
 FROM ${BASE} AS builder
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates git \
+    && apt-get install -y --no-install-recommends ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=uv /uv /usr/local/bin/uv
 ENV UV_PYTHON_INSTALL_DIR=/opt/python UV_PYTHON_PREFERENCE=only-managed UV_LINK_MODE=copy \

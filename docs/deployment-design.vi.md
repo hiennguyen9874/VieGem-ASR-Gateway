@@ -1,15 +1,16 @@
-# Kiến trúc VieGem ASR Gateway (model QUAN-Transcribe-1.0)
+# Kiến trúc VieGem ASR Gateway (model VieGem-ASR)
 
 Cách chạy: [README](../README.md). Payload: [api-contract.vi.md](api-contract.vi.md). Việc chưa làm: [roadmap.md](roadmap.md).
 
 ## 1. Lựa chọn
 
-**Inference Python gốc (`quan_transcribe`, commit đã pin) + một gateway FastAPI mỏng, đóng gói Docker.**
+**Inference Python của VieGem-ASR (vendored trong `app/viegem/`, revision đã pin) + một gateway FastAPI mỏng,
+đóng gói Docker.**
 
 - Không port model sang GGUF/C++, không dùng vLLM/Triton/Redis/Celery.
 - REST, SSE và Realtime WebSocket dùng chung một engine, mỗi giao thức có adapter riêng.
 - Một container = một process = một model instance = một GPU.
-- Phạm vi: *OpenAI Audio Transcriptions và Realtime transcription trong phạm vi công bố*. QUAN là ASR tiếng Việt;
+- Phạm vi: *OpenAI Audio Transcriptions và Realtime transcription trong phạm vi công bố*. VieGem-ASR là ASR tiếng Việt;
   dịch, TTS, chat hay Realtime hội thoại cần engine khác, không thuộc gateway này.
 
 ## 2. Kiến trúc
@@ -28,13 +29,13 @@ OpenAI SDK / curl / WebSocket client
    ├─ scheduler: queue có giới hạn, công bằng giữa lane         app/scheduler.py
    └─ EngineWorker: thread duy nhất gọi model                   app/engine.py
                  |
-   QUAN (greedy CTC) + base google/embeddinggemma-2            app/quan_loader.py
+   VieGem-ASR (greedy CTC) + base google/embeddinggemma-2      app/viegem_loader.py, app/viegem/
    load từ /models (read-only, đã pin + SHA256), không truy cập Hub
 ```
 
 ### Quy tắc cốt lõi
 
-- **Mọi inference được serialize.** `QuanCTC._acts` là state mutable của forward hooks: chỉ `EngineWorker` (một
+- **Mọi inference được serialize.** `CTCModel._acts` là state mutable của forward hooks: chỉ `EngineWorker` (một
   thread) gọi model. Endpoint không gọi model hay worker trực tiếp; mỗi request/session là một *lane* trong
   scheduler, mỗi chunk là một *job*.
 - **Event loop chỉ làm I/O.** FFmpeg chạy subprocess, inference chạy trên worker thread.
@@ -74,8 +75,9 @@ xử lý FIFO qua cùng `split`/`run_chunks`/`Joiner` như REST. Gửi có giớ
 
 ## 4. Model và dữ liệu
 
-- Model nạp bằng `app/quan_loader.load_quan` từ thư mục đã stage, không dùng `QuanTranscribe.from_pretrained` (hàm
-  này resolve base model theo Hub `main`). Parity với loader reference đã kiểm chứng (`torch.equal` logits).
+- Model nạp bằng `app/viegem_loader.load_viegem` chỉ từ thư mục đã stage (checkpoint đọc `weights_only`, không
+  resolve Hub id). Parity với code reference `references/VieGem-ASR` đã kiểm chứng (`torch.equal` logits, full và
+  streaming; `tests/gpu/test_viegem_parity.py`). Code vendored theo CC-BY-NC-SA-4.0 (ADR 0001).
 - Pins duy nhất: `assets/manifest.json` (repo, commit, size, SHA256 từng file); `scripts/stage_models.py` tải và
   kiểm tra. Chi tiết: [baseline.vi.md](baseline.vi.md).
 - Decode greedy, không KenLM. Output giữ nguyên: chữ thường, không dấu câu, số viết bằng chữ.

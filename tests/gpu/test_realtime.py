@@ -19,7 +19,7 @@ import soundfile as sf
 import soxr
 import torch
 
-from app.engine import QuanEngine
+from app.engine import VieGemEngine
 from app.realtime import PCM_RATE, TurnBuffer
 from scripts.smoke_inference import wer
 from tests.live_server import serve, SR, wav_file, WS
@@ -27,7 +27,7 @@ from tests.live_server import serve, SR, wav_file, WS
 ROOT = Path(__file__).resolve().parents[2]
 MODELS = Path(os.environ.get("VIEGEM_MODELS_DIR", ROOT / "models"))
 FIXTURES = ROOT / "tests/fixtures"
-MODEL = "quan-transcribe-1.0"
+MODEL = "viegem-asr"
 PACKET = PCM_RATE // 50 * 2  # 20 ms of PCM16
 pytestmark = [
     pytest.mark.gpu,
@@ -38,7 +38,7 @@ pytestmark = [
 
 @pytest.fixture(scope="module")
 def srv():
-    engine = QuanEngine(MODELS, "cuda", warmup_seconds=30.0)
+    engine = VieGemEngine(MODELS, "cuda", warmup_seconds=30.0)
     with serve(engine, ready_timeout=300, http_timeout=300, models_dir=MODELS) as s:
         yield s
 

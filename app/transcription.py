@@ -48,12 +48,14 @@ from app.errors import (
 from app.observability import log, Metrics
 from app.scheduler import JobKind, Lane, Scheduler
 
-MODEL_ID = "quan-transcribe-1.0"
-WHISPER_ALIAS = "whisper-1"  # opt-in (VIEGEM_WHISPER_ALIAS); same QUAN backend, not Whisper output
-MODEL_CREATED = (
-    1791950390  # commit time of the pinned weights revision (docs/api-contract.vi.md §3)
+MODEL_ID = "viegem-asr"
+WHISPER_ALIAS = (
+    "whisper-1"  # opt-in (VIEGEM_WHISPER_ALIAS); same VieGem-ASR backend, not Whisper output
 )
-MODEL_OWNER = "qnguyen3"
+MODEL_CREATED = (
+    1792562586  # commit time of the pinned weights revision (docs/api-contract.vi.md §3)
+)
+MODEL_OWNER = "5CD-AI"
 
 SINGLE_FIELDS = frozenset(
     {"model", "language", "temperature", "prompt", "response_format", "stream"}
@@ -286,7 +288,7 @@ class DisconnectWatch:
     `receive()` can only return `http.disconnect`."""
 
     def __init__(self, receive: Receive):
-        self._task = asyncio.create_task(self._wait(receive), name="quan-disconnect-watch")
+        self._task = asyncio.create_task(self._wait(receive), name="viegem-disconnect-watch")
 
     @staticmethod
     async def _wait(receive: Receive) -> None:

@@ -38,7 +38,7 @@ from scripts.subtitles import parse_cues  # noqa: E402
 
 FIXTURES = ROOT / "tests/fixtures"
 LONG = ROOT / "fixtures-large/vi_long.wav"
-MODEL = "quan-transcribe-1.0"
+MODEL = "viegem-asr"
 LONG_MAX_WER = 0.10
 SMALL = ("vi_a.wav", "vi_b.wav", "silence_2s.wav", "short_200ms.wav")
 REALTIME_WER_SLACK = 0.02

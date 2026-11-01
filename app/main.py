@@ -19,7 +19,7 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from app.audio import AudioIngress
 from app.config import Config, ConfigError
-from app.engine import Engine, EngineWorker, QuanEngine
+from app.engine import Engine, EngineWorker, VieGemEngine
 from app.errors import (
     APIError,
     install_handlers,
@@ -57,7 +57,7 @@ def create_app(config: Config | None = None, engine: Engine | None = None) -> Fa
             raise ConfigError(
                 f"VIEGEM_MODELS_DIR is not a directory (run scripts/stage_models.py): {config.models_dir}"
             )
-        engine = QuanEngine(
+        engine = VieGemEngine(
             config.models_dir, config.device, warmup_seconds=config.max_chunk_seconds
         )
 

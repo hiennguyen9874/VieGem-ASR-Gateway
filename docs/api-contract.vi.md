@@ -1,4 +1,4 @@
-# API contract — QUAN-Transcribe gateway (profile OpenAI đã pin)
+# API contract — VieGem ASR gateway (profile OpenAI đã pin)
 
 Kiến trúc: [deployment-design.vi.md](deployment-design.vi.md). Cách chạy: [README](../README.md). Chưa hỗ trợ: [roadmap.md](roadmap.md).
 
@@ -38,11 +38,11 @@ Không có endpoint nào trả `logprobs`, `avg_logprob`, `no_speech_prob`, conf
 
 ## 3. Models
 
-- Id: `quan-transcribe-1.0`. Alias `whisper-1` chỉ khi bật cấu hình (mặc định tắt); khi bật, `whisper-1` được chấp
-  nhận ở mọi field `model` và được liệt kê trong `/v1/models` như một model riêng (cùng backend QUAN, output khác
-  Whisper; ghi rõ trong README). Mọi id khác: 404 `model_not_found`.
-- Object: `{"id", "object": "model", "created", "owned_by": "qnguyen3"}`. `created` = commit time của revision
-  weights đã pin (`a08726d…` → `1791950390`). Ví dụ: `examples/models.json`, `examples/model.json`.
+- Id: `viegem-asr`. Alias `whisper-1` chỉ khi bật cấu hình (mặc định tắt); khi bật, `whisper-1` được chấp
+  nhận ở mọi field `model` và được liệt kê trong `/v1/models` như một model riêng (cùng backend VieGem-ASR, output
+  khác Whisper; ghi rõ trong README). Mọi id khác, kể cả id cũ `quan-transcribe-1.0`: 404 `model_not_found`.
+- Object: `{"id", "object": "model", "created", "owned_by": "5CD-AI"}`. `created` = commit time của revision
+  weights đã pin (`95eae70…` → `1792562586`). Ví dụ: `examples/models.json`, `examples/model.json`.
 
 ## 4. `POST /v1/audio/transcriptions`
 
@@ -77,7 +77,7 @@ Kết quả:
 - `text` → `200 text/plain; charset=utf-8`, body đúng bằng transcript, không thêm newline. SDK trả nguyên body.
 - `verbose_json` → `200 application/json`: `{"text", "language": "vietnamese", "duration", "usage": {"type":
   "duration", "seconds"}}`, `duration == usage.seconds`. **Không có `segments`** (schema SDK bắt buộc
-  `avg_logprob`, `no_speech_prob`, `compression_ratio`, `tokens` kiểu Whisper — QUAN không có dữ liệu thật) và
+  `avg_logprob`, `no_speech_prob`, `compression_ratio`, `tokens` kiểu Whisper — model không có dữ liệu thật) và
   không có `words` cho tới R2b. Ví dụ `examples/transcription_verbose.json`; dạng R2b (có `words`, chưa phục vụ):
   `examples/transcription_verbose_words.json`.
 - `srt` → `200 text/plain; charset=utf-8`: cue `n\nHH:MM:SS,mmm --> HH:MM:SS,mmm\ntext\n\n`, đánh số từ 1; không có
@@ -97,8 +97,9 @@ Kết quả:
 - Text: chữ thường tiếng Việt, không dấu câu, số viết bằng chữ (output nguyên bản của model). Nhiều chunk nối bằng
   một dấu cách; chunk rỗng không sinh dấu cách.
 - Silence/clip ngắn (`app/chunking.py`): audio decode hợp lệ nhưng ≤ 1,600 mẫu ở 16 kHz (≤ 100 ms), kể
-  cả 0 mẫu → `text: ""` (`verbose_json` với `duration` thật, `srt` rỗng, `vtt` chỉ header), không gọi model (frontend crash dưới 161 mẫu; xem baseline §7). Silence dài vẫn qua model
-  và cho `""` (đã đo), không dùng ngưỡng biên độ.
+  cả 0 mẫu → `text: ""` (`verbose_json` với `duration` thật, `srt` rỗng, `vtt` chỉ header), không gọi model (frontend crash dưới 161 mẫu; xem baseline §5). Silence dài vẫn qua model,
+  không dùng ngưỡng biên độ; một chunk toàn im lặng số (0 hoặc gần 0, từ ~1 s) có thể cho một từ sai thay vì `""`
+  (đặc tính của VieGem-ASR, đã đo: baseline §5).
 - Chunking: audio dài hơn `VIEGEM_MAX_CHUNK_SECONDS` (mặc định 30 s) được cắt tại điểm yên lặng nhất trong 5 s cuối
   trước giới hạn; các chunk phủ liền toàn bộ audio (không bỏ silence, không bỏ đuôi), mỗi chunk > 100 ms. Text có
   thể khác một lời gọi `transcribe()` của reference trên cùng file vì điểm cắt khác.
@@ -156,7 +157,7 @@ Session sau khi accept (server gửi `session.created` ngay):
 
 ```json
 {"type": "transcription", "audio": {"input": {"format": {"type": "audio/pcm", "rate": 24000},
-  "transcription": {"model": "quan-transcribe-1.0", "language": "vi"}, "turn_detection": null}}}
+  "transcription": {"model": "viegem-asr", "language": "vi"}, "turn_detection": null}}}
 ```
 
 Client events:
@@ -170,7 +171,7 @@ Client events:
 | Type khác trong union client GA (`response.create`, `conversation.item.create`, `output_audio_buffer.clear`, …) | `error` `unsupported_event` (`param: "type"`). JSON sai / không phải object → `invalid_event`; thiếu `type` hoặc type ngoài union GA (kể cả beta `transcription_session.update`) → `invalid_event` (`param: "type"`); field lạ trong event → `unknown_parameter`; `event_id` không phải chuỗi → `invalid_value`. Lỗi event không đóng socket |
 
 Audio: PCM16 / 32768 → float32, resample 24 → 16 kHz bằng soxr HQ dạng stream khi append; waveform commit **bằng
-tuyệt đối** soxr one-shot trên cả turn (cùng resampler `quan_transcribe` dùng), độc lập cách chia packet. Text có thể
+tuyệt đối** soxr one-shot trên cả turn, độc lập cách chia packet. Text có thể
 khác REST trên cùng file (FFmpeg resampler, quantize PCM16, ranh giới turn do client chọn). Turn dài hơn
 `VIEGEM_MAX_CHUNK_SECONDS` được chia chunk như REST (§4): nhiều delta, cùng một item.
 

@@ -2,7 +2,7 @@
 
     CUDA_VISIBLE_DEVICES=<free gpu> uv run scripts/probe_alignment.py --out docs/baseline/alignment_probe.json
 
-Runs the real `QuanEngine` (greedy, full context) on the committed fixtures (and fixtures-large/vi_long.wav when
+Runs the real `VieGemEngine` (greedy, full context) on the committed fixtures (and fixtures-large/vi_long.wav when
 present) and reports:
   (a) encoder output length vs the frame-geometry formula `#{k : 640 k + 160 < L}` over many lengths;
   (b) shift equivariance: prepend `s` zero samples, the word starts/ends should move by `s` (within one frame);
@@ -136,9 +136,9 @@ def main() -> int:
     ap.add_argument("--out", type=Path)
     args = ap.parse_args()
 
-    from app.engine import QuanEngine
+    from app.engine import VieGemEngine
 
-    engine = QuanEngine(args.models_dir, "cuda", warmup_seconds=args.max_chunk_seconds)
+    engine = VieGemEngine(args.models_dir, "cuda", warmup_seconds=args.max_chunk_seconds)
     engine.load()
     engine.warmup()
     pieces = engine.pieces()

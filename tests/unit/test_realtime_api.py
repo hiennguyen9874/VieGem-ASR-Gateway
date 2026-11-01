@@ -43,10 +43,11 @@ def settled(srv) -> None:
     ("", {}, 401, "invalid_api_key"),
     ("", {"Authorization": "Bearer wrong-key-0123456789"}, 401, "invalid_api_key"),
     ("?model=whisper-1", AUTH, 404, "model_not_found"),
+    ("?model=quan-transcribe-1.0", AUTH, 404, "model_not_found"),
     ("?model=", AUTH, 404, "model_not_found"),
     ("?intent=conversation", AUTH, 400, "invalid_value"),
     ("?call_id=rtc_1", AUTH, 400, "unsupported_parameter"),
-    ("?model=quan-transcribe-1.0&model=quan-transcribe-1.0", AUTH, 400, "invalid_value"),
+    ("?model=viegem-asr&model=viegem-asr", AUTH, 400, "invalid_value"),
 ])
 def test_handshake_refused_before_accept(srv, query, headers, status, code):
     with pytest.raises(InvalidStatus) as e:
