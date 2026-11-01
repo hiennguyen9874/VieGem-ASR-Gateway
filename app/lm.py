@@ -179,10 +179,18 @@ class LMPool:
             self.ready = True
 
     def stop(self) -> None:
-        """Blocking: cancels queued decodes and joins the processes (a running decode is one chunk)."""
+        """After scheduler drain, kill remaining work and reap workers within a shared five-second budget."""
         self.ready = False
         if self._executor is not None:
-            self._executor.shutdown(wait=True, cancel_futures=True)
+            # Python 3.12 has no public kill_workers(); snapshot before shutdown clears _processes.
+            processes = list((self._executor._processes or {}).values())
+            for process in processes:
+                if process.is_alive():
+                    process.kill()
+            self._executor.shutdown(wait=False, cancel_futures=True)
+            deadline = time.monotonic() + 5
+            for process in processes:
+                process.join(max(0, deadline - time.monotonic()))
 
     async def decode(self, lattice: Lattice, pieces: Sequence[str], deadline: float | None) -> UnitPath:
         """Units, first and last frames of the LM decode of `lattice`; `pieces` maps every unit id to its text."""

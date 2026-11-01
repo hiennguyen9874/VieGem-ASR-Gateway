@@ -138,7 +138,7 @@ class Config:
             raise ConfigError("VIEGEM_MAX_SESSIONS must be <= VIEGEM_QUEUE_MAX_LANES")
         if self.lm_workers > self.lm_max_pending:
             raise ConfigError("VIEGEM_LM_WORKERS must be <= VIEGEM_LM_MAX_PENDING")
-        if self.lm_workers > (os.cpu_count() or 1):
+        if self.lm and self.lm_workers > (os.cpu_count() or 1):
             raise ConfigError("VIEGEM_LM_WORKERS must be <= the number of CPUs")
 
     @classmethod

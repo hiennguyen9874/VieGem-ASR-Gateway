@@ -153,7 +153,7 @@ không có alias cấu hình cũ. Đầy đủ: `app/config.py`.
 | `VIEGEM_PRECISION` | `fp32` | Precision inference: `fp32` (WER fixture thấp nhất) hoặc `bf16` (autocast CUDA, file dài nhanh hơn ~2.6×); `fp16` bị từ chối (overflow). Số đo: docs/baseline.vi.md §8 |
 | `VIEGEM_WHISPER_ALIAS` | `false` | Chấp nhận model id `whisper-1` |
 | `VIEGEM_LM` | `false` | Decode bằng language model (KenLM beam search trên pool CPU, hằng số model card: alpha 0.35, beta 1.5, beam 32). Chưa qua gate; cần file LM đã stage (`viegem-asr/lm/`), thiếu → không start |
-| `VIEGEM_LM_WORKERS` | 2 | Số process CPU của pool LM (≤ `VIEGEM_LM_MAX_PENDING`, ≤ số CPU); mỗi process nạp LM riêng |
+| `VIEGEM_LM_WORKERS` | 2 | Số process CPU của pool LM (≤ `VIEGEM_LM_MAX_PENDING`, khi bật LM phải ≤ số CPU); mỗi process nạp LM riêng |
 | `VIEGEM_LM_MAX_PENDING` | 8 | Chunk đang chờ + đang decode trong pool LM; đầy → chờ `VIEGEM_QUEUE_TIMEOUT_SECONDS` rồi 429 |
 | `VIEGEM_LOG_LEVEL` | `INFO` | Mức log |
 | `VIEGEM_MAX_UPLOAD_BYTES` | 25 MiB | Cả body multipart → 413 |
@@ -184,7 +184,8 @@ trên phần cứng của bạn trước khi tăng.
   Docker không tự restart container chỉ vì `unhealthy`: dùng watchdog/orchestrator (autoheal, systemd, Kubernetes
   `livenessProbe`). Lỗi inference đơn lẻ trả 500 `inference_failed`, worker tự warm-up lại.
 - **Dừng/cập nhật:** `docker compose stop` (SIGTERM) ngừng nhận kết nối mới, request đang chạy được làm xong (≤ 30 s),
-  drain queue (≤ 30 s); log `server.stopped` có `drained`. WebSocket **không** được drain: đóng với code 1012, item
+  drain queue (≤ 30 s); sau drain, process LM còn lại bị kill và chờ thu hồi tối đa 5 s cho cả pool.
+  Log `server.stopped` có `drained`. WebSocket **không** được drain: đóng với code 1012, item
   chưa `completed` bị mất, client kết nối lại và gửi lại audio. Rolling update: bỏ instance khỏi load balancer trước.
 - **Rollback:** giữ image digest + CUDA profile của bản tốt, chạy lại digest đó với cùng `./models`; chờ `/ready`
   và chạy smoke trước khi mở traffic.

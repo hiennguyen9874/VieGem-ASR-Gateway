@@ -122,6 +122,43 @@ def test_ready_waits_for_the_lm_and_missing_lm_files_abort_startup(tmp_path):
         gate.set()
 
 
+def hold_process(marker):
+    Path(marker).touch()
+    time.sleep(60)
+
+
+def test_stop_kills_running_work_and_reaps_processes(tmp_path):
+    async def run():
+        p = LMPool(stage_tiny_lm(tmp_path), 1, 2, 0.2, Metrics())
+        p.start()
+        processes = []
+        try:
+            await asyncio.wait_for(p._warm, 30)
+            assert p.ready
+            processes = list(p._executor._processes.values())
+            marker = tmp_path / "started"
+            running = p._executor.submit(hold_process, str(marker))
+            async with asyncio.timeout(10):
+                while not marker.exists():
+                    await asyncio.sleep(0.01)
+            queued = p._executor.submit(lm_module._ping)
+            await asyncio.wait_for(asyncio.to_thread(p.stop), 2)
+            assert not p.ready
+            assert all(not process.is_alive() for process in processes)
+            async with asyncio.timeout(2):
+                while not running.done() or not queued.done():
+                    await asyncio.sleep(0.01)
+            p.stop()  # idempotent
+        finally:
+            for process in processes:
+                if process.is_alive():
+                    process.kill()
+                process.join(2)
+            p._executor.shutdown(wait=True, cancel_futures=True)
+
+    asyncio.run(run())
+
+
 # -- pool bounds (thread executor in place of processes, so the decode can be held) ---------------------------------
 
 

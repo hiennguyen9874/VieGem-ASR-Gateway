@@ -17,6 +17,16 @@ def test_defaults_with_one_key():
     assert KEY not in repr(cfg)
 
 
+def test_lm_cpu_limit_only_applies_when_enabled(monkeypatch):
+    monkeypatch.setattr("app.config.os.cpu_count", lambda: 1)
+    assert Config.from_env({"VIEGEM_API_KEYS": KEY}).lm is False
+    with pytest.raises(ConfigError, match="number of CPUs"):
+        Config.from_env({"VIEGEM_API_KEYS": KEY, "VIEGEM_LM": "true"})
+    assert Config.from_env({
+        "VIEGEM_API_KEYS": KEY, "VIEGEM_LM": "true", "VIEGEM_LM_WORKERS": "1",
+    }).lm is True
+
+
 def test_parses_typed_values():
     cfg = Config.from_env({
         "VIEGEM_API_KEYS": f" {KEY} , {'j' * 20} ", "VIEGEM_WHISPER_ALIAS": "true", "VIEGEM_QUEUE_MAX_JOBS": "8",
@@ -79,7 +89,7 @@ def test_api_keys_file(tmp_path):
     {"VIEGEM_API_KEYS": KEY, "VIEGEM_LM_WORKERS": "0"},
     {"VIEGEM_API_KEYS": KEY, "VIEGEM_LM_MAX_PENDING": "-1"},
     {"VIEGEM_API_KEYS": KEY, "VIEGEM_LM_WORKERS": "4", "VIEGEM_LM_MAX_PENDING": "3"},  # a worker could never run
-    {"VIEGEM_API_KEYS": KEY, "VIEGEM_LM_WORKERS": "100000", "VIEGEM_LM_MAX_PENDING": "100000"},  # > CPUs
+    {"VIEGEM_API_KEYS": KEY, "VIEGEM_LM": "true", "VIEGEM_LM_WORKERS": "100000", "VIEGEM_LM_MAX_PENDING": "100000"},  # > CPUs
 ])
 def test_invalid_config_fails_startup(env):
     with pytest.raises(ConfigError) as e:
