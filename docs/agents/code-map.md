@@ -6,6 +6,8 @@ Each file's job, and the tests that cover it. Area rules live in [change-rules.m
 
 ```text
 quan_loader.py    load QUAN from staged local dirs only (no Hub resolution); reuses quan_transcribe classes
+viegem_loader.py  future VieGem loader from staged local base + weights-only checkpoint (not yet served)
+viegem/           inference-only upstream model, features and units; CC-BY-NC-SA-4.0 LICENSE + NOTICE
 config.py         typed VIEGEM_* env config, validated at startup; no default API key
 engine.py         QuanEngine adapter + EngineWorker, the single thread that runs the model;
                     ChunkResult = text + greedy CTC path (units, first/last frame) + frames
@@ -51,7 +53,7 @@ subtitles.py        dependency-free SRT/VTT parser, shared by smoke_server.py an
 | `scheduler/` | CPU | scheduler/worker gate with the fake engine: serialization, bounds, fairness, cancel |
 | `audio/` | CPU + ffmpeg | formats, hostile inputs, decode bounds, multipart limits, temp cleanup |
 | `contract/` | CPU (+ Node for `js/`) | `examples/` parsed by the pinned Python SDK (`test_python_sdk.py`) and JS SDK (`js/contract.test.ts`); `test_server_sdk.py` runs a real server against both SDKs (REST over http, Realtime over wss with a self-signed cert, JS via `js/server.test.ts`) |
-| `gpu/` | CUDA + staged models | loader parity with the reference (exact logits, needs network), real engine, decode -> chunk -> engine pipeline, `test_server.py` (R2a cue gate), `test_realtime.py` (R3a gate) |
+| `gpu/` | CUDA + staged models | QUAN loader parity (needs network); `test_viegem_parity.py` compares vendored VieGem with its pinned reference offline, exact logits in full context and streaming; real engine, pipeline, `test_server.py` (R2a), `test_realtime.py` (R3a) |
 | `container/` | docker (+ NVIDIA toolkit, `VIEGEM_GPU`) | image gate; skips without docker |
 
 Shared helpers:

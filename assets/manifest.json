@@ -85,6 +85,22 @@
           "sha256": "4b852efc0b9960283e735363331e6f325b33bc74bdbaa076f595bc4e9b94d85e"
         }
       }
+    },
+    "viegem-asr": {
+      "repo_id": "5CD-AI/VieGem-ASR",
+      "revision": "95eae70b21fb0ef640e3ac4ea8cfa2380872ed20",
+      "dir": "viegem-asr",
+      "license": "cc-by-nc-sa-4.0 + gemma",
+      "files": {
+        "README.md": {
+          "size": 6391,
+          "sha256": "96da36700a70208b27bcda0fc2e067a87951448747cf4f644edccc1b4be79b6a"
+        },
+        "viegem_asr.pt": {
+          "size": 310593984,
+          "sha256": "18104f4551f48c23e0e3b76433747f6fca7d4a3069a4330e691a1bba2df8cfa6"
+        }
+      }
     }
   }
 }

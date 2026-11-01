@@ -1,0 +1,8 @@
+VieGem-ASR inference code
+Source: https://huggingface.co/5CD-AI/VieGem-ASR
+Revision: 95eae70b21fb0ef640e3ac4ea8cfa2380872ed20
+License: CC-BY-NC-SA-4.0 (see LICENSE)
+
+Changes: removed training-only LoRA, SpecAugment, dropout, dynamic chunk training,
+checkpoint training utilities, text normalization and unit construction; restricted
+model and feature loading to local files. Preserved encoder gradient flags for inference parity.

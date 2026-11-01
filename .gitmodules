@@ -13,3 +13,6 @@
 [submodule "references/WhisperLiveKit"]
 	path = references/WhisperLiveKit
 	url = git@github.com:QuentinFuxa/WhisperLiveKit.git
+[submodule "references/VieGem-ASR"]
+	path = references/VieGem-ASR
+	url = https://huggingface.co/5CD-AI/VieGem-ASR

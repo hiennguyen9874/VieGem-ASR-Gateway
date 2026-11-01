@@ -13,6 +13,14 @@ Read the section for each area you touch before editing it. File roles: [code-ma
 - Cancel drops queued chunks and discards the running chunk's result. A running kernel finishes; the worker and
   budgets are released only when the real call returns.
 
+## Vendored VieGem inference (not yet served)
+
+- `app/viegem/` is the CC-BY-NC-SA-4.0 licence boundary; retain its LICENSE and update NOTICE when changing it.
+- Keep `references/VieGem-ASR` read-only and pinned to the manifest checkpoint revision. After changes, run
+  `tests/gpu/test_viegem_parity.py` against staged assets on a free GPU; exact bf16 logits must match upstream
+  for full-context and streaming inference. Preserve top-k encoder `requires_grad` flags.
+- `app/viegem_loader.py` uses staged local files and weights-only checkpoint loading; it does not switch the server.
+
 ## Audio (`audio.py`, `chunking.py`)
 
 - Decode client audio only with `AudioIngress.decode`; chunk only with `chunking.split`.
