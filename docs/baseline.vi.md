@@ -27,8 +27,8 @@ staging, cả hai repo đều không bị gate (không cần `HF_TOKEN`); `stage
 
 `app/viegem_loader.load_viegem(models_dir, device)` dựng model từ thư mục base đã stage và `viegem_asr.pt` (đọc
 `weights_only`), không resolve Hub id; kiểm tra `model_config.encoder_id` và key ngoài encoder. Parity
-(`tests/gpu/test_viegem_parity.py`, cần GPU, không cần mạng): cờ `requires_grad`, logits full/streaming bf16
-`torch.equal` với code reference ở cùng revision.
+(`tests/gpu/test_viegem_parity.py`, cần GPU, không cần mạng): cờ `requires_grad`, logits full/streaming ở fp32
+(precision serving) và bf16 autocast `torch.equal` với code reference ở cùng revision.
 
 ## 3. Fixtures
 
@@ -45,27 +45,28 @@ FLEURS vi_vn không có speaker id: `vi_a`/`vi_b` chắc chắn khác nội dung
 
 ## 4. Số đo (A100-PCIE-40GB, cu126, offline)
 
-Greedy, không LM, chunk 30 s (`app/chunking.split`, splitter của gateway), autocast bf16. Median 5 lần sau warm-up. Report: [`baseline/offline.json`](baseline/offline.json)
+Greedy, không LM, chunk 30 s (`app/chunking.split`, splitter của gateway), fp32 không autocast (precision serving,
+§8). Median 5 lần sau warm-up. Report: [`baseline/offline.json`](baseline/offline.json)
 (SHA256 của text UTF-8 là chuẩn so sánh byte-exact cho smoke và GPU tests; không lưu transcript).
 
 | Chỉ số | Giá trị |
 |---|---|
-| Cold load (file trong page cache → model trên GPU) | 5.3 s |
-| Inference đầu tiên (8.88 s audio) | 1.0 s |
-| Peak CPU RSS / RSS sau load | 4,019 MB / 1,191 MB |
+| Cold load (file trong page cache → model trên GPU) | 5.5 s |
+| Inference đầu tiên (8.88 s audio) | 0.9 s |
+| Peak CPU RSS / RSS sau load | 4,015 MB / 1,192 MB |
 | GPU sau load: allocated / reserved | 1,373 / 1,396 MB |
-| GPU peak (≤ 4 × 30 s chunk/lần): allocated / reserved | 2,196 / 2,722 MB |
+| GPU peak (≤ 4 × 30 s chunk/lần): allocated / reserved | 2,126 / 2,650 MB |
 
 | Fixture | Audio | Full: median | Full: WER | Streaming mask: median | Streaming mask: WER |
 |---|---:|---:|---:|---:|---:|
-| `vi_a.wav` | 8.88 s | 53 ms | 0.0% | 60 ms | 0.0% |
-| `vi_b.wav` | 8.46 s | 53 ms | 4.0% | 53 ms | 8.0% |
-| `vi_long.wav` | 106.62 s | 69 ms | 7.4% | 64 ms | 6.6% |
-| `silence_2s.wav` | 2.00 s | 53 ms → `""` | — | 54 ms → `""` | — |
-| `short_200ms.wav` | 0.20 s | 51 ms → `""` | — | 51 ms → `""` | — |
+| `vi_a.wav` | 8.88 s | 48 ms | 0.0% | 42 ms | 0.0% |
+| `vi_b.wav` | 8.46 s | 43 ms | 4.0% | 43 ms | 8.0% |
+| `vi_long.wav` | 106.62 s | 168 ms | 7.0% | 169 ms | 6.6% |
+| `silence_2s.wav` | 2.00 s | 40 ms → `""` | — | 41 ms → `""` | — |
+| `short_200ms.wav` | 0.20 s | 39 ms → `""` | — | 39 ms → `""` | — |
 
 WER thô so với transcript FLEURS, chỉ để phát hiện model hỏng. Output tất định qua các lần lặp; batch hai clip cho
-text giống chạy riêng. Có sàn ~50 ms mỗi lời gọi, chi phối với utterance ngắn. Gateway chỉ dùng chế độ full-context.
+text giống chạy riêng. Có sàn ~40–50 ms mỗi lời gọi, chi phối với utterance ngắn. Gateway chỉ dùng chế độ full-context.
 Report ghi 1 failure: WER tổng cao hơn baseline QUAN (bảng dưới). Script kiểm tra ngưỡng 17/329 và trả exit 1;
 không nới ngưỡng để che regression. Silence số 0 đã qua policy ở §5.
 
@@ -76,14 +77,15 @@ của reference). Lỗi từ / số từ tham chiếu, full context:
 |---|---:|---:|---:|
 | `vi_a.wav` | 32 | 0 (0.0%) | 2 (6.3%) |
 | `vi_b.wav` | 25 | 1 (4.0%) | 1 (4.0%) |
-| `vi_long.wav` | 272 | 20 (7.4%) | 14 (5.2%) |
-| Tổng | 329 | 21 (6.4%) | 17 (5.2%) |
+| `vi_long.wav` | 272 | 19 (7.0%) | 14 (5.2%) |
+| Tổng | 329 | 20 (6.1%) | 17 (5.2%) |
 
-Trên 329 từ fixture, VieGem-ASR **kém hơn** baseline QUAN (6.4% so với 5.2%); lỗi chủ yếu ở tên riêng (`byzantine`,
+Trên 329 từ fixture, VieGem-ASR fp32 **kém hơn** baseline QUAN (6.1% so với 5.2%); lỗi chủ yếu ở tên riêng (`byzantine`,
 `bhajan`, `lakkha singh`). Đo trước đó: cắt `vi_long` theo từng câu cho 6.3%, cả file một lần 7.0%.
-Đo precision với splitter hiện tại cho fp32 20/329 lỗi (6.08%), vẫn chưa đạt (§8).
+Bf16 autocast (precision serving trước #6) cho 21/329 lỗi (6.4%) (§8).
 Model card (8 test set, cùng normalizer) cho FLEURS 7.33 so với 7.88 của QUAN; không dùng số model card để thay
-ngưỡng fixture. Bộ dev lớn hơn ủng hộ VieGem (§8), nhưng tiêu chí "không kém QUAN trên fixture" của #4 **chưa đạt**.
+ngưỡng fixture. Bộ dev lớn hơn ủng hộ VieGem (§8). Tiêu chí "không kém QUAN trên fixture" của #4 **chưa đạt**; owner
+chấp nhận ngoại lệ khi đóng #4, ngưỡng thực thi 17/329 giữ nguyên.
 
 **Nguồn gốc sàn ~50 ms** (đo với QUAN tại `8cffbe7`, cùng encoder; chưa profile lại với VieGem-ASR, bảng trên cho
 cùng sàn). Mỗi lời gọi bị giới hạn bởi kernel launch, không bởi compute GPU:
@@ -96,7 +98,7 @@ cùng sàn). Mỗi lời gọi bị giới hạn bởi kernel launch, không b�
 | Thời gian kernel trên GPU (torch profiler, 8.9 s) | ~14 ms |
 
 Trên gateway, REST còn cộng thêm decode FFmpeg (~69 ms/request trung bình; xem report gốc), nên REST
-8.88 s ≈ 125 ms trong khi Realtime commit → completed ≈ 57 ms. Hệ quả cho tải: [roadmap.md](roadmap.md) §1, §4.
+8.88 s ≈ 118–141 ms trong khi Realtime commit → completed ≈ 46 ms (fp32, `server.json`). Hệ quả cho tải: [roadmap.md](roadmap.md) §1, §4.
 
 ## 5. Giới hạn frontend và clip ngắn
 
@@ -163,7 +165,7 @@ Chưa đo: LM/KenLM, Python 3.11, cold load khi page cache lạnh, tải đồng
 
 ## 8. Precision, dev set lớn hơn và near-zero (A100/cu126)
 
-### Precision (#6, đo trước khi #4 đạt)
+### Precision (#6): chọn fp32
 
 Cùng staged weights, greedy, splitter 30 s và padded-batch budget của offline baseline; bf16/fp16 là autocast,
 fp32 tắt autocast (không lượng tử hoá lại checkpoint). Median 5 lần sau warm-up. Peak VRAM tính cả workload
@@ -176,11 +178,16 @@ full-context/streaming của script, không phải capacity mỗi request của 
 | fp32 | 20 | 6.08% | 46.5 / 168.7 ms | 0.00523 / 0.00158 | 2126 / 2650 MiB |
 
 Fp16 fail với `RuntimeError`: không biểu diễn được giá trị bằng Half (overflow), không coi WER là 0.
-Theo rule của #1/#6, **fp32 là ứng viên** vì giảm 0.304 điểm phần trăm WER fixture (> 0.1).
-Tuy nhiên 20 lỗi vẫn vượt giới hạn QUAN 17 lỗi; cả bf16 và fp32 trả exit 1 ở gate.
-**Chưa đổi engine mặc định bf16**, chưa đóng #4/#6 hay phát hành precision mới khi gate còn fail.
-Fp32 nhanh hơn với clip ngắn ở lần đo này nhưng chậm hơn đáng kể với file dài; không kết luận một precision
-luôn nhanh hơn từ máy dùng chung này.
+Theo rule của #1/#6 (WER fixture thấp nhất; chỉ xét tốc độ/VRAM khi chênh ≤ 0.1 điểm), **engine dùng fp32**
+(tắt autocast, mặc định `VIEGEM_PRECISION=fp32`): giảm 0.304 điểm phần trăm WER fixture so với bf16 (> 0.1), peak VRAM thấp hơn
+~70 MiB. Đổi lại, file dài chậm hơn ~2.6× (vi_long 169 so với 64 ms/106 s audio, RTF vẫn 0.0016); clip ngắn
+không chậm hơn ở lần đo này. Trên dev (bảng dưới) hai precision gần như bằng nhau. Operator cần throughput
+file dài có thể đặt `VIEGEM_PRECISION=bf16` (autocast CUDA, đổi lấy +1/329 lỗi fixture); `fp16` bị từ chối lúc start.
+Kiểm chứng override: server smoke với bf16 0 failure, WER REST `vi_long` 7.35% như report bf16 trước (fp32: 6.99%).
+
+Đo lại sau khi đổi (A100/cu126): `offline.json` fp32 khớp hash transcript của `precision-fp32.json`, 20/329 lỗi, chỉ
+fail ngưỡng QUAN 17/329 (ngoại lệ đã chấp nhận ở #4, không nới ngưỡng); GPU tier 13 passed gồm parity fp32 và bf16;
+server smoke và alignment probe 0 failure. Image gate cu126/cu128 chưa chạy lại (#5).
 
 ### FLEURS vi_vn/dev: 361 recording, 10,373 từ
 

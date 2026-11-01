@@ -58,7 +58,10 @@ def create_app(config: Config | None = None, engine: Engine | None = None) -> Fa
                 f"VIEGEM_MODELS_DIR is not a directory (run scripts/stage_models.py): {config.models_dir}"
             )
         engine = VieGemEngine(
-            config.models_dir, config.device, warmup_seconds=config.max_chunk_seconds
+            config.models_dir,
+            config.device,
+            warmup_seconds=config.max_chunk_seconds,
+            precision=config.precision,
         )
 
     if not config.spool_dir.is_dir():

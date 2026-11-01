@@ -11,7 +11,7 @@ KEY = "k" * 20
 
 def test_defaults_with_one_key():
     cfg = Config.from_env({"VIEGEM_API_KEYS": KEY})
-    assert cfg.api_keys == (KEY,) and cfg.whisper_alias is False
+    assert cfg.api_keys == (KEY,) and cfg.whisper_alias is False and cfg.precision == "fp32"
     assert cfg.queue_max_buffered_samples == int(cfg.queue_max_buffered_seconds * 16000)
     assert KEY not in repr(cfg)
 
@@ -20,8 +20,9 @@ def test_parses_typed_values():
     cfg = Config.from_env({
         "VIEGEM_API_KEYS": f" {KEY} , {'j' * 20} ", "VIEGEM_WHISPER_ALIAS": "true", "VIEGEM_QUEUE_MAX_JOBS": "8",
         "VIEGEM_MAX_CHUNK_SECONDS": "20.5", "VIEGEM_MODELS_DIR": "/srv/models", "VIEGEM_LOG_LEVEL": "debug",
-        "VIEGEM_SPOOL_DIR": "/var/spool/viegem",
+        "VIEGEM_SPOOL_DIR": "/var/spool/viegem", "VIEGEM_PRECISION": " BF16 ", "VIEGEM_DEVICE": "cuda:1",
     })
+    assert cfg.precision == "bf16" and cfg.device == "cuda:1"
     assert cfg.api_keys == (KEY, "j" * 20) and cfg.whisper_alias is True and cfg.queue_max_jobs == 8
     assert cfg.max_chunk_seconds == 20.5 and cfg.models_dir == Path("/srv/models") and cfg.log_level == "DEBUG"
     assert cfg.max_chunk_samples == 328000 and cfg.spool_dir == Path("/var/spool/viegem")
@@ -61,6 +62,9 @@ def test_api_keys_file(tmp_path):
     {"VIEGEM_API_KEYS": KEY, "VIEGEM_DECODE_TIMEOUT_SECONDS": "-1"},
     {"VIEGEM_API_KEYS": KEY, "VIEGEM_WHISPER_ALIAS": "maybe"},
     {"VIEGEM_API_KEYS": KEY, "VIEGEM_LOG_LEVEL": "TRACE"},
+    {"VIEGEM_API_KEYS": KEY, "VIEGEM_PRECISION": "fp16"},  # overflows in the encoder (docs/baseline.vi.md §8)
+    {"VIEGEM_API_KEYS": KEY, "VIEGEM_PRECISION": "float32"},
+    {"VIEGEM_API_KEYS": KEY, "VIEGEM_PRECISION": "bf16", "VIEGEM_DEVICE": "cpu"},  # autocast only on CUDA
     {"VIEGEM_API_KEYS": KEY, "VIEGEM_MAX_CHUNK_SECONDS": "60", "VIEGEM_QUEUE_MAX_BUFFERED_SECONDS": "30"},
     {"VIEGEM_API_KEYS": KEY, "VIEGEM_MAX_TURN_SECONDS": "1000", "VIEGEM_QUEUE_MAX_BUFFERED_SECONDS": "900"},
     {"VIEGEM_API_KEYS": KEY, "VIEGEM_QUEUE_MAX_JOBS_PER_LANE": "10", "VIEGEM_QUEUE_MAX_JOBS": "5"},

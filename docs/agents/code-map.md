@@ -7,7 +7,7 @@ Each file's job, and the tests that cover it. Area rules live in [change-rules.m
 ```text
 viegem_loader.py  load the Model from staged local base + weights-only checkpoint only (no Hub resolution)
 viegem/           inference-only upstream model, features and units; CC-BY-NC-SA-4.0 LICENSE + NOTICE
-config.py         typed VIEGEM_* env config, validated at startup; no default API key
+config.py         typed VIEGEM_* env config, validated at startup; no default API key; VIEGEM_PRECISION (fp32|bf16)
 engine.py         VieGemEngine adapter + EngineWorker, the single thread that runs the model;
                     ChunkResult = text + greedy CTC path (units, first/last frame) + frames
 scheduler.py      bounded fair queue (lanes = requests/sessions, jobs = chunks) feeding the worker

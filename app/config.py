@@ -17,6 +17,8 @@ SAMPLE_RATE = 16000  # Model input rate; queue budgets are counted in 16 kHz sam
 PREFIX = "VIEGEM_"
 MIN_API_KEY_LENGTH = 16
 MIN_CHUNK_SECONDS = 1.0
+# Inference precision (docs/baseline.vi.md §8): fp32 has the lowest fixture WER; bf16 is CUDA autocast; fp16 overflows.
+PRECISIONS = ("fp32", "bf16")
 
 
 class ConfigError(ValueError):
@@ -28,6 +30,7 @@ class Config:
     api_keys: tuple[str, ...] = dataclasses.field(repr=False)
     models_dir: Path = Path("models")
     device: str = "cuda"
+    precision: str = "fp32"
     whisper_alias: bool = False  # opt-in alias `whisper-1` (docs/api-contract.vi.md §3)
     log_level: str = "INFO"
 
@@ -97,6 +100,12 @@ class Config:
             )
         if not self.device:
             raise ConfigError("VIEGEM_DEVICE must not be empty")
+        if self.precision not in PRECISIONS:
+            raise ConfigError(
+                f"VIEGEM_PRECISION must be one of {', '.join(PRECISIONS)}, got {self.precision!r}"
+            )
+        if self.precision == "bf16" and not self.device.startswith("cuda"):
+            raise ConfigError("VIEGEM_PRECISION=bf16 needs a CUDA VIEGEM_DEVICE (autocast)")
         for f in dataclasses.fields(self):
             value = getattr(self, f.name)
             if f.type in (int, float) and not (math.isfinite(value) and value > 0):
@@ -177,6 +186,8 @@ def _parse(name: str, raw: str, type_: object) -> object:
             return float(raw)
         if type_ is Path:
             return Path(raw)
-        return raw.upper() if name == PREFIX + "LOG_LEVEL" else raw
+        if name == PREFIX + "LOG_LEVEL":
+            return raw.upper()
+        return raw.lower() if name == PREFIX + "PRECISION" else raw
     except ValueError:
         raise ConfigError(f"{name}: invalid value {raw!r}") from None

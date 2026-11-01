@@ -1,7 +1,8 @@
-"""Exact-logits parity with the pinned read-only VieGem-ASR reference, using local assets."""
+"""Exact-logits parity (fp32 and bf16 autocast) with the pinned read-only VieGem-ASR reference, using local assets."""
 
 import dataclasses
 import importlib
+import itertools
 import json
 import os
 import subprocess
@@ -63,13 +64,15 @@ def test_viegem_local_loader_matches_reference(monkeypatch):
         assert sr == 16000
         x = torch.from_numpy(wav).unsqueeze(0).cuda()
         lengths = torch.tensor([x.shape[1]], device="cuda")
-        for streaming in (False, True):
-            with torch.no_grad(), torch.autocast("cuda", dtype=torch.bfloat16):
+        # fp32 is the serving precision; bf16 autocast stays covered (its numerics depend on the grad flags).
+        for streaming, bf16 in itertools.product((False, True), (False, True)):
+            with torch.no_grad(), torch.autocast("cuda", dtype=torch.bfloat16, enabled=bf16):
                 logits, lens = local(x, lengths, streaming=streaming)
                 expected, expected_lens = reference(x, lengths, streaming=streaming)
             assert torch.equal(lens, expected_lens) and torch.equal(logits, expected), (
                 name,
                 streaming,
+                bf16,
             )
             assert units.decode(tokenizer, ref.greedy_decode(logits, lens)[0]) == units.decode(
                 tokenizer, ref.greedy_decode(expected, expected_lens)[0]

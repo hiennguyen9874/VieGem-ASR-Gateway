@@ -21,7 +21,7 @@ from typing import NamedTuple, Protocol
 
 import numpy as np
 
-from app.config import SAMPLE_RATE
+from app.config import PRECISIONS, SAMPLE_RATE
 from app.errors import inference_failed, model_not_ready
 from app.observability import log, Metrics
 
@@ -71,11 +71,19 @@ class Engine(Protocol):
 
 
 class VieGemEngine:
-    """Greedy, full-context decoding of one 16 kHz mono chunk with bf16 autocast on CUDA (no LM)."""
+    """Greedy, full-context decoding of one 16 kHz mono chunk (no LM).
 
-    def __init__(self, models_dir: Path, device: str, warmup_seconds: float):
+    `precision` (`VIEGEM_PRECISION`): "fp32" (default, lowest fixture WER) or "bf16" CUDA autocast; see
+    `app.config.PRECISIONS` and docs/baseline.vi.md §8.
+    """
+
+    def __init__(
+        self, models_dir: Path, device: str, warmup_seconds: float, precision: str = "fp32"
+    ):
+        if precision not in PRECISIONS:
+            raise ValueError(f"precision must be one of {PRECISIONS}, got {precision!r}")
         self._models_dir, self._warmup_seconds = models_dir, warmup_seconds
-        self._device = device
+        self._device, self._precision = device, precision
         self._model = self._tokenizer = self._units = None
 
     def load(self) -> None:
@@ -84,6 +92,8 @@ class VieGemEngine:
         from app.viegem_loader import load_viegem
 
         self._device = torch.device(self._device)
+        if self._precision == "bf16" and self._device.type != "cuda":
+            raise ValueError("bf16 precision needs a CUDA device (autocast)")
         self._model, self._tokenizer, self._units = load_viegem(self._models_dir, self._device)
 
     def warmup(self) -> None:
@@ -100,10 +110,9 @@ class VieGemEngine:
 
         x = torch.from_numpy(wav).unsqueeze(0).to(self._device)
         lens = torch.tensor([len(wav)], device=self._device)
-        on_cuda = self._device.type == "cuda"
         with (
             torch.no_grad(),
-            torch.autocast(self._device.type, dtype=torch.bfloat16, enabled=on_cuda),
+            torch.autocast("cuda", dtype=torch.bfloat16, enabled=self._precision == "bf16"),
         ):
             return self._model(x, lens, streaming=False)
 

@@ -1,8 +1,8 @@
 {
-  "base_url": "http://127.0.0.1:40341",
-  "commit": "e4091e8ccb769c7e47cbda605e02b904a668789e-dirty",
-  "started_unix": 1793526780,
-  "ready_wait_s": 0.006,
+  "base_url": "http://127.0.0.1:18731",
+  "commit": "6e5ceb82f7bc6b50c63d45530e95f5001abc464f-dirty",
+  "started_unix": 1793531146,
+  "ready_wait_s": 0.005,
   "health": {
     "status": "ok"
   },
@@ -28,12 +28,12 @@
         "vtt": 2
       },
       "timings_s": {
-        "json": 0.155,
-        "text": 0.125,
-        "sse_total": 0.125,
-        "sse_first_event": 0.124,
-        "verbose_json": 0.121,
-        "srt_vtt": 0.242
+        "json": 0.141,
+        "text": 0.118,
+        "sse_total": 0.117,
+        "sse_first_event": 0.117,
+        "verbose_json": 0.123,
+        "srt_vtt": 0.231
       },
       "audio_s": 8.88,
       "baseline_sha256": "c36b625507e87e9ebd73c08ac0b06849b448bed3adcb6c4598e7a6f6a446a094",
@@ -61,12 +61,12 @@
         "vtt": 2
       },
       "timings_s": {
-        "json": 0.123,
-        "text": 0.12,
-        "sse_total": 0.122,
-        "sse_first_event": 0.122,
-        "verbose_json": 0.122,
-        "srt_vtt": 0.245
+        "json": 0.118,
+        "text": 0.118,
+        "sse_total": 0.114,
+        "sse_first_event": 0.114,
+        "verbose_json": 0.114,
+        "srt_vtt": 0.228
       },
       "audio_s": 8.46,
       "baseline_sha256": "58332a01cdf496347d75f9a9798d05cd92e0e85900e8f7d41ab461d862284ede",
@@ -94,12 +94,12 @@
         "vtt": 0
       },
       "timings_s": {
-        "json": 0.147,
-        "text": 0.119,
-        "sse_total": 0.119,
-        "sse_first_event": 0.119,
-        "verbose_json": 0.12,
-        "srt_vtt": 0.246
+        "json": 0.116,
+        "text": 0.114,
+        "sse_total": 0.112,
+        "sse_first_event": 0.111,
+        "verbose_json": 0.111,
+        "srt_vtt": 0.22
       },
       "audio_s": 2.0,
       "baseline_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
@@ -127,12 +127,12 @@
         "vtt": 0
       },
       "timings_s": {
-        "json": 0.122,
-        "text": 0.115,
-        "sse_total": 0.114,
-        "sse_first_event": 0.114,
-        "verbose_json": 0.114,
-        "srt_vtt": 0.228
+        "json": 0.12,
+        "text": 0.104,
+        "sse_total": 0.104,
+        "sse_first_event": 0.103,
+        "verbose_json": 0.103,
+        "srt_vtt": 0.208
       },
       "audio_s": 0.2,
       "baseline_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
@@ -160,19 +160,19 @@
         "vtt": 43
       },
       "timings_s": {
-        "json": 0.335,
-        "text": 0.324,
-        "sse_total": 0.319,
-        "sse_first_event": 0.161,
-        "verbose_json": 0.318,
-        "srt_vtt": 0.646
+        "json": 0.422,
+        "text": 0.32,
+        "sse_total": 0.309,
+        "sse_first_event": 0.158,
+        "verbose_json": 0.307,
+        "srt_vtt": 0.619
       },
       "audio_s": 106.62,
-      "wer": 0.0735,
-      "text_sha256": "a144f5ea41f223ed1b6e271c6964236a85db4f3a7dbbbcd3897f37ef8b7d3bfc",
-      "text_body_sha256": "a144f5ea41f223ed1b6e271c6964236a85db4f3a7dbbbcd3897f37ef8b7d3bfc",
-      "sse_joined_sha256": "a144f5ea41f223ed1b6e271c6964236a85db4f3a7dbbbcd3897f37ef8b7d3bfc",
-      "sse_done_sha256": "a144f5ea41f223ed1b6e271c6964236a85db4f3a7dbbbcd3897f37ef8b7d3bfc"
+      "wer": 0.0699,
+      "text_sha256": "934b19d5c407f20e7e832e620f4c9478e70ab6d0d63813b19293552efbce254e",
+      "text_body_sha256": "934b19d5c407f20e7e832e620f4c9478e70ab6d0d63813b19293552efbce254e",
+      "sse_joined_sha256": "934b19d5c407f20e7e832e620f4c9478e70ab6d0d63813b19293552efbce254e",
+      "sse_done_sha256": "934b19d5c407f20e7e832e620f4c9478e70ab6d0d63813b19293552efbce254e"
     }
   },
   "realtime": {
@@ -180,9 +180,9 @@
       "deltas": 1,
       "audio_s": 8.88,
       "timings_s": {
-        "append_send": 0.05,
-        "commit_to_first_delta": 0.056,
-        "commit_to_completed": 0.056
+        "append_send": 0.051,
+        "commit_to_first_delta": 0.046,
+        "commit_to_completed": 0.046
       },
       "wer": 0.0,
       "rest_wer": 0.0,
@@ -192,9 +192,9 @@
       "deltas": 1,
       "audio_s": 8.46,
       "timings_s": {
-        "append_send": 0.047,
-        "commit_to_first_delta": 0.055,
-        "commit_to_completed": 0.055
+        "append_send": 0.046,
+        "commit_to_first_delta": 0.047,
+        "commit_to_completed": 0.047
       },
       "wer": 0.04,
       "rest_wer": 0.04,
@@ -205,8 +205,8 @@
       "audio_s": 2.0,
       "timings_s": {
         "append_send": 0.004,
-        "commit_to_first_delta": 0.057,
-        "commit_to_completed": 0.057
+        "commit_to_first_delta": 0.046,
+        "commit_to_completed": 0.046
       },
       "text_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     },
@@ -215,8 +215,8 @@
       "audio_s": 0.2,
       "timings_s": {
         "append_send": 0.001,
-        "commit_to_first_delta": 0.055,
-        "commit_to_completed": 0.055
+        "commit_to_first_delta": 0.042,
+        "commit_to_completed": 0.042
       },
       "text_sha256": "8e3aafe8f85bcb4a59bc0a0d42e4cf0c262fd898c1cb1ce054d90f170143e18d"
     },
@@ -225,11 +225,11 @@
       "audio_s": 106.62,
       "timings_s": {
         "append_send": 0.566,
-        "commit_to_first_delta": 0.067,
-        "commit_to_completed": 0.228
+        "commit_to_first_delta": 0.078,
+        "commit_to_completed": 0.236
       },
       "wer": 0.0772,
-      "rest_wer": 0.0735,
+      "rest_wer": 0.0699,
       "text_sha256": "3b81818484786881baf1cde719d0d498b4e4aec4e349645bfd1f62e0f5a66a96"
     }
   },
@@ -243,7 +243,7 @@
     "viegem_realtime_commit_to_completed_seconds_bucket{le=\"0.005\"} 0",
     "viegem_realtime_commit_to_completed_seconds_bucket{le=\"0.01\"} 0",
     "viegem_realtime_commit_to_completed_seconds_bucket{le=\"0.025\"} 0",
-    "viegem_realtime_commit_to_completed_seconds_bucket{le=\"0.05\"} 0",
+    "viegem_realtime_commit_to_completed_seconds_bucket{le=\"0.05\"} 4",
     "viegem_realtime_commit_to_completed_seconds_bucket{le=\"0.1\"} 4",
     "viegem_realtime_commit_to_completed_seconds_bucket{le=\"0.25\"} 5",
     "viegem_realtime_commit_to_completed_seconds_bucket{le=\"0.5\"} 5",
@@ -255,7 +255,7 @@
     "viegem_realtime_commit_to_completed_seconds_bucket{le=\"60.0\"} 5",
     "viegem_realtime_commit_to_completed_seconds_bucket{le=\"120.0\"} 5",
     "viegem_realtime_commit_to_completed_seconds_bucket{le=\"+Inf\"} 5",
-    "viegem_realtime_commit_to_completed_seconds_sum 0.4397523608058691",
+    "viegem_realtime_commit_to_completed_seconds_sum 0.4008628099691123",
     "viegem_realtime_commit_to_completed_seconds_count 5",
     "viegem_realtime_items_total{outcome=\"completed\"} 5.0",
     "viegem_realtime_sessions 0.0",

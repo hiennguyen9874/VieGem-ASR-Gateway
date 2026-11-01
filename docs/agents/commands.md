@@ -59,7 +59,8 @@ CUDA_VISIBLE_DEVICES=<gpu> uv run --extra cu126 scripts/probe_alignment.py --out
 Diagnostic precision and silence measurements (do not change serving defaults):
 
 ```bash
-# Each precision writes its own report; bf16/fp32 currently exit 1 on fixture WER; fp16 exits 1 on overflow.
+# Serving precision is fp32 (the default). Each precision writes its own report; bf16/fp32 exit 1 on the
+# recorded QUAN fixture-WER limit (accepted exception, #4); fp16 exits 1 on overflow.
 CUDA_VISIBLE_DEVICES=<gpu> uv run --extra cu126 --offline scripts/smoke_inference.py \
     --precision fp32 --no-network --out docs/baseline/precision-fp32.json   # also bf16, fp16
 CUDA_VISIBLE_DEVICES=<gpu> uv run --extra cu126 --offline scripts/probe_silence.py \

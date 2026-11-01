@@ -99,3 +99,22 @@ def test_chunk_result_path_is_the_greedy_decode():
             expected = greedy_decode(logits, lens)[0]
             assert list(result.units) == expected
             assert result.text == engine._units.decode(engine._tokenizer, expected)
+
+
+def test_bf16_precision_override_uses_autocast():
+    """`VIEGEM_PRECISION=bf16` runs bf16 autocast: exact logits of a direct autocast call, unlike fp32."""
+    bf16_baseline = json.loads((ROOT / "docs/baseline/precision-bf16.json").read_text())["results"]
+    wav = sf.read(ROOT / "tests/fixtures/vi_a.wav", dtype="float32")[0]
+    engine = VieGemEngine(MODELS, "cuda", warmup_seconds=1.0, precision="bf16")
+    engine.load()
+    logits, _ = engine.forward(wav)
+    x = torch.from_numpy(wav).unsqueeze(0).cuda()
+    lens = torch.tensor([len(wav)], device="cuda")
+    with torch.no_grad():
+        fp32_logits, _ = engine._model(x, lens)
+        with torch.autocast("cuda", dtype=torch.bfloat16):
+            expected, _ = engine._model(x, lens)
+    assert torch.equal(logits, expected) and not torch.equal(logits, fp32_logits)
+    assert text_sha256(engine.transcribe(wav).text) == bf16_baseline["vi_a.wav:full"]["text_sha256"]
+    with pytest.raises(ValueError):
+        VieGemEngine(MODELS, "cuda", 1.0, precision="fp16")

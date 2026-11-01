@@ -32,12 +32,12 @@ Pre-release: tag `v0.1.0-rc.1`.
   auth/lỗi/overload/isolation, SIGTERM khi đang stream → `done` + `drained: true`, restart → ready.
   `docs/baseline/server-container-cu128.json`.
   Bằng chứng này là của QUAN-Transcribe-1.0; chạy lại cho VieGem-ASR ở #5.
-- **Server smoke (local GPU, VieGem-ASR):** mọi format + Realtime; `vi_long` WER 7.4%; không failure sau policy
-  chunk toàn số 0 → text/path rỗng. GPU tier 13 passed. Reports chỉ lưu hash/metadata; WER tổng 6.4% vẫn cao hơn
-  baseline QUAN 5.2%, nên #4 chưa đạt ([baseline.vi.md](baseline.vi.md) §4–5). `docs/baseline/server.json`.
-- **Đo precision/dev/near-zero (thăm dò):** fp32 20/329 lỗi, bf16 21/329, fp16 overflow; cả hai precision còn
-  vượt giới hạn 17/329. Trên 349 dev recording ngoài file nguồn fixture: VieGem 9.63%, QUAN 10.33%; không thay
-  thế gate #4. Chưa đổi engine bf16 hay bật ngưỡng RMS. [baseline.vi.md §8](baseline.vi.md#8-precision-dev-set-lớn-hơn-và-near-zero-a100cu126).
+- **Server smoke (local GPU, VieGem-ASR):** mọi format + Realtime ở fp32; `vi_long` WER 7.0%; không failure sau policy
+  chunk toàn số 0 → text/path rỗng. GPU tier 13 passed. Reports chỉ lưu hash/metadata; WER tổng 6.1% vẫn cao hơn
+  baseline QUAN 5.2%; #4 đóng với ngoại lệ owner chấp nhận ([baseline.vi.md](baseline.vi.md) §4–5). `docs/baseline/server.json`.
+- **Precision (#6):** fp32 20/329 lỗi, bf16 21/329, fp16 overflow → engine dùng fp32 (không autocast); GPU tier,
+  parity fp32/bf16, server smoke và alignment probe chạy lại ở fp32. Cả hai precision còn vượt giới hạn 17/329.
+  Trên 349 dev recording ngoài file nguồn fixture: VieGem 9.63%, QUAN 10.33% (thăm dò). Không bật ngưỡng RMS. [baseline.vi.md §8](baseline.vi.md#8-precision-dev-set-lớn-hơn-và-near-zero-a100cu126).
 - **CPU suite:** unit + scheduler + audio + contract (Python SDK `openai==3.31.0`, JS SDK `openai@7.33.0`, server
   HTTP/WSS thật) — 447 passed.
 

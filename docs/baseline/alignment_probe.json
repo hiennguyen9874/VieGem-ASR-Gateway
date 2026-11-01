@@ -118,7 +118,7 @@
     "median": 160.0,
     "p90": 640.0,
     "max": 3400.0,
-    "mean": 318.0,
+    "mean": 318.2,
     "share_ge_500": 0.1265
   },
   "word_duration_ms": {
@@ -128,7 +128,7 @@
     "median": 40.0,
     "p90": 80.0,
     "max": 320.0,
-    "mean": 48.2
+    "mean": 48.0
   },
   "b_shift": {
     "min_start_within_1_frame": 1.0,
@@ -171,10 +171,10 @@
           "n": 32,
           "min": -20.0,
           "p10": -20.0,
-          "median": -20.0,
+          "median": 0.0,
           "p90": 20.0,
           "max": 20.0,
-          "mean": -1.2
+          "mean": 0.0
         },
         "end_delta_ms": {
           "n": 32,
@@ -226,7 +226,7 @@
           "median": 17.5,
           "p90": 17.5,
           "max": 17.5,
-          "mean": 1.2
+          "mean": 0.0
         },
         "end_delta_ms": {
           "n": 32,
@@ -346,26 +346,26 @@
         "clip": "vi_b.wav",
         "shift_samples": 160,
         "words": 25,
-        "matched": 24,
+        "matched": 25,
         "start_within_1_frame": 1.0,
         "end_within_1_frame": 1.0,
         "start_delta_ms": {
-          "n": 24,
+          "n": 25,
           "min": -10.0,
           "p10": -10.0,
           "median": -10.0,
           "p90": 30.0,
           "max": 30.0,
-          "mean": 1.7
+          "mean": 2.8
         },
         "end_delta_ms": {
-          "n": 24,
+          "n": 25,
           "min": -10.0,
           "p10": -10.0,
           "median": -10.0,
           "p90": 30.0,
           "max": 30.0,
-          "mean": -3.3
+          "mean": -2.0
         }
       },
       {
@@ -382,7 +382,7 @@
           "median": 20.0,
           "p90": 20.0,
           "max": 20.0,
-          "mean": 4.0
+          "mean": 5.6
         },
         "end_delta_ms": {
           "n": 25,
@@ -434,7 +434,7 @@
           "median": 17.5,
           "p90": 17.5,
           "max": 17.5,
-          "mean": 3.1
+          "mean": 4.7
         },
         "end_delta_ms": {
           "n": 25,
@@ -512,7 +512,7 @@
           "median": -10.0,
           "p90": 30.0,
           "max": 30.0,
-          "mean": 1.2
+          "mean": -0.4
         },
         "end_delta_ms": {
           "n": 25,
@@ -590,7 +590,7 @@
           28220.0,
           29220.0
         ],
-        "last_word_end_minus_gap_start_ms": -400.0,
+        "last_word_end_minus_gap_start_ms": -360.0,
         "first_word_start_minus_gap_end_ms": 960.3,
         "words_inside_gap": 0,
         "cues_straddling_gap": 0
@@ -620,7 +620,7 @@
           28220.0
         ],
         "first_start_minus_onset_ms": 270.0,
-        "last_end_minus_offset_ms": 150.0
+        "last_end_minus_offset_ms": 190.0
       },
       {
         "region_ms": [
@@ -725,9 +725,9 @@
       "min": -1379.9,
       "p10": -800.0,
       "median": -224.1,
-      "p90": 177.2,
+      "p90": 190.0,
       "max": 205.0,
-      "mean": -320.8
+      "mean": -318.0
     },
     "cues": 8,
     "cue_duration_ms": {
@@ -737,7 +737,7 @@
       "median": 3120.0,
       "p90": 4120.0,
       "max": 4120.0,
-      "mean": 3085.0
+      "mean": 3090.0
     },
     "cue_chars": {
       "n": 8,

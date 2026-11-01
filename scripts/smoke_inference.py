@@ -5,7 +5,7 @@
         --out docs/baseline/offline.json
 
 Loads only staged assets (app/viegem_loader.py) after verifying them against assets/manifest.json. Decoding is greedy
-(no LM, bf16 autocast on CUDA by default; --precision fp16/fp32 is diagnostic only); long audio uses the gateway splitter and
+(no LM, fp32 like the engine by default; --precision bf16/fp16 autocast is diagnostic only); long audio uses the gateway splitter and
 the chunks are batched. --no-network sets HF_HUB_OFFLINE and installs an audit hook that fails
 any socket connection or DNS lookup made by this process, so a hidden Hub access is an error, not a silent download.
 Outputs a JSON report; exits non-zero when a gate check fails.
@@ -32,7 +32,7 @@ from scripts.scoring import text_sha256, wer  # noqa: E402
 DECODER = {
     "decoder": "greedy",
     "use_lm": False,
-    "autocast": "bf16",
+    "autocast": None,
     "splitter": "app.chunking.split",
     "silence_policy": "empty transcript for all-zero chunks; no amplitude threshold",
     "chunk_seconds": 30.0,
@@ -203,8 +203,8 @@ def main() -> int:
     ap.add_argument(
         "--precision",
         choices=("bf16", "fp16", "fp32"),
-        default="bf16",
-        help="diagnostic autocast precision; does not change the server",
+        default="fp32",
+        help="fp32 = serving precision; bf16/fp16 autocast is diagnostic and does not change the server",
     )
     ap.add_argument(
         "--repeats", type=int, default=5, help="warm timing repeats per fixture and mode"

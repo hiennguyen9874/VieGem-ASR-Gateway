@@ -148,6 +148,7 @@ không có alias cấu hình cũ. Đầy đủ: `app/config.py`.
 | `VIEGEM_API_KEYS_FILE` / `VIEGEM_API_KEYS` | (bắt buộc) | Key Bearer (compose dùng file secret) |
 | `VIEGEM_MODELS_DIR` | `models` | Thư mục model đã stage (compose dùng `/models`) |
 | `VIEGEM_DEVICE` | `cuda` | Thiết bị chạy model |
+| `VIEGEM_PRECISION` | `fp32` | Precision inference: `fp32` (WER fixture thấp nhất) hoặc `bf16` (autocast CUDA, file dài nhanh hơn ~2.6×); `fp16` bị từ chối (overflow). Số đo: docs/baseline.vi.md §8 |
 | `VIEGEM_WHISPER_ALIAS` | `false` | Chấp nhận model id `whisper-1` |
 | `VIEGEM_LOG_LEVEL` | `INFO` | Mức log |
 | `VIEGEM_MAX_UPLOAD_BYTES` | 25 MiB | Cả body multipart → 413 |
