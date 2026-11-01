@@ -34,3 +34,17 @@ per-client rate limits belong to the operator's infrastructure in front of it.
   independent of it.
 - Keep `HF_TOKEN`, API keys, audio and transcripts out of commits, logs and reports.
 - A change is done when code, tests and the docs describing it agree.
+
+## Agent skills
+
+### Issue tracker
+
+Track issues in GitHub Issues using `gh`. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Use the canonical triage labels. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+For domain terminology and architecture decisions, use the single-context layout. See `docs/agents/domain.md`.
