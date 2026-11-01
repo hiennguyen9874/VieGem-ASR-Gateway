@@ -12,6 +12,7 @@ KEY = "k" * 20
 def test_defaults_with_one_key():
     cfg = Config.from_env({"VIEGEM_API_KEYS": KEY})
     assert cfg.api_keys == (KEY,) and cfg.whisper_alias is False and cfg.precision == "fp32"
+    assert cfg.lm is False and (cfg.lm_workers, cfg.lm_max_pending) == (2, 8)  # LM off until its gate passes
     assert cfg.queue_max_buffered_samples == int(cfg.queue_max_buffered_seconds * 16000)
     assert KEY not in repr(cfg)
 
@@ -21,7 +22,9 @@ def test_parses_typed_values():
         "VIEGEM_API_KEYS": f" {KEY} , {'j' * 20} ", "VIEGEM_WHISPER_ALIAS": "true", "VIEGEM_QUEUE_MAX_JOBS": "8",
         "VIEGEM_MAX_CHUNK_SECONDS": "20.5", "VIEGEM_MODELS_DIR": "/srv/models", "VIEGEM_LOG_LEVEL": "debug",
         "VIEGEM_SPOOL_DIR": "/var/spool/viegem", "VIEGEM_PRECISION": " BF16 ", "VIEGEM_DEVICE": "cuda:1",
+        "VIEGEM_LM": "on", "VIEGEM_LM_WORKERS": "1", "VIEGEM_LM_MAX_PENDING": "3",
     })
+    assert cfg.lm is True and (cfg.lm_workers, cfg.lm_max_pending) == (1, 3)
     assert cfg.precision == "bf16" and cfg.device == "cuda:1"
     assert cfg.api_keys == (KEY, "j" * 20) and cfg.whisper_alias is True and cfg.queue_max_jobs == 8
     assert cfg.max_chunk_seconds == 20.5 and cfg.models_dir == Path("/srv/models") and cfg.log_level == "DEBUG"
@@ -72,6 +75,11 @@ def test_api_keys_file(tmp_path):
     {"VIEGEM_API_KEYS": KEY, "VIEGEM_MAX_CHUNK_SECONDS": "0.5"},  # splitter needs room above the short-clip floor
     {"VIEGEM_API_KEYS": KEY, "VIEGEM_MAX_DECODED_SECONDS": "100"},  # a max-length file could never be held
     {"VIEGEM_API_KEYS": KEY, "VIEGEM_MAX_UPLOAD_BYTES": "1000", "VIEGEM_MAX_SPOOL_BYTES": "999"},
+    {"VIEGEM_API_KEYS": KEY, "VIEGEM_LM": "maybe"},
+    {"VIEGEM_API_KEYS": KEY, "VIEGEM_LM_WORKERS": "0"},
+    {"VIEGEM_API_KEYS": KEY, "VIEGEM_LM_MAX_PENDING": "-1"},
+    {"VIEGEM_API_KEYS": KEY, "VIEGEM_LM_WORKERS": "4", "VIEGEM_LM_MAX_PENDING": "3"},  # a worker could never run
+    {"VIEGEM_API_KEYS": KEY, "VIEGEM_LM_WORKERS": "100000", "VIEGEM_LM_MAX_PENDING": "100000"},  # > CPUs
 ])
 def test_invalid_config_fails_startup(env):
     with pytest.raises(ConfigError) as e:

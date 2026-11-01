@@ -32,6 +32,11 @@ class Config:
     device: str = "cuda"
     precision: str = "fp32"
     whisper_alias: bool = False  # opt-in alias `whisper-1` (docs/api-contract.vi.md §3)
+    # LM decoding (ADR 0002): off until its gate passes. A pool of CPU processes, each with the LM loaded.
+    lm: bool = False
+    lm_workers: int = 2
+    # Chunks queued + running in the LM pool; a full pool waits queue_timeout_seconds, then 429.
+    lm_max_pending: int = 8
     log_level: str = "INFO"
 
     # Upload and decode (M2)
@@ -131,6 +136,10 @@ class Config:
             raise ConfigError("VIEGEM_QUEUE_MAX_JOBS_PER_LANE must be <= VIEGEM_QUEUE_MAX_JOBS")
         if self.max_sessions > self.queue_max_lanes:
             raise ConfigError("VIEGEM_MAX_SESSIONS must be <= VIEGEM_QUEUE_MAX_LANES")
+        if self.lm_workers > self.lm_max_pending:
+            raise ConfigError("VIEGEM_LM_WORKERS must be <= VIEGEM_LM_MAX_PENDING")
+        if self.lm_workers > (os.cpu_count() or 1):
+            raise ConfigError("VIEGEM_LM_WORKERS must be <= the number of CPUs")
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> "Config":

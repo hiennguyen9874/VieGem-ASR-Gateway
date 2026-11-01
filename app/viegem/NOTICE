@@ -6,3 +6,7 @@ License: CC-BY-NC-SA-4.0 (see LICENSE)
 Changes: removed training-only LoRA, SpecAugment, dropout, dynamic chunk training,
 checkpoint training utilities, text normalization and unit construction; restricted
 model and feature loading to local files. Preserved encoder gradient flags for inference parity.
+
+lm_decode.py (from asr/lm_decode.py): decode() takes per-frame candidates already pruned to
+token_min_logp (ids ascending, argmax fallback) instead of the dense log-prob matrix; contextual
+biasing removed; formatting. The prefix beam search and its scoring are unchanged.

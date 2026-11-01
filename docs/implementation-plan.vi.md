@@ -38,6 +38,11 @@ Pre-release: tag `v0.1.0-rc.1`.
 - **Precision (#6):** fp32 20/329 lỗi, bf16 21/329, fp16 overflow → engine dùng fp32 (không autocast); GPU tier,
   parity fp32/bf16, server smoke và alignment probe chạy lại ở fp32. Cả hai precision còn vượt giới hạn 17/329.
   Trên 349 dev recording ngoài file nguồn fixture: VieGem 9.63%, QUAN 10.33% (thăm dò). Không bật ngưỡng RMS. [baseline.vi.md §8](baseline.vi.md#8-precision-dev-set-lớn-hơn-và-near-zero-a100cu126).
+- **LM (#8, chưa qua gate, tắt mặc định):** `VIEGEM_LM=true` chạy KenLM beam search trên pool process CPU, forced
+  alignment cho `srt`/`vtt`; REST mọi format và Realtime dùng chung `run_chunks`/`Joiner`. CPU: decoder sparse khớp
+  từng unit với decoder dense upstream, E2E server với LM tí hon (`tests/unit/test_lm_*.py`); GPU: `tests/gpu/test_lm.py`
+  (REST + Realtime = decode LM thuần trên cùng audio, cue không vào khoảng lặng). GPU tier 18 passed, CPU 510 passed.
+  Gate image với LM chưa chạy (#5).
 - **CPU suite:** unit + scheduler + audio + contract (Python SDK `openai==3.31.0`, JS SDK `openai@7.33.0`, server
   HTTP/WSS thật) — 447 passed.
 

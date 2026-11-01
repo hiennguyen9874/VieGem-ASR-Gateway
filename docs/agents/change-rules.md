@@ -12,6 +12,10 @@ Read the section for each area you touch before editing it. File roles: [code-ma
   lanes get bounded priority (`live_priority_ratio`).
 - Cancel drops queued chunks and discards the running chunk's result. A running kernel finishes; the worker and
   budgets are released only when the real call returns.
+- LM (`app/lm.py`, ADR 0002): the engine thread never runs beam search; it only returns the pruned `Lattice`. The
+  LM pool is a bounded spawn process pool (`VIEGEM_LM_WORKERS`, `VIEGEM_LM_MAX_PENDING`); a cancelled decode keeps
+  its slot until the process finishes. Decoding constants are the model card's (not operator settings).
+  `app/viegem/lm_decode.py` must keep matching upstream's search (`tests/unit/test_lm_decode.py`).
 
 ## Vendored VieGem inference (`app/viegem/`)
 
@@ -34,8 +38,9 @@ Read the section for each area you touch before editing it. File roles: [code-ma
 
 ## Timestamps (`alignment.py`, `formats.py`)
 
-- Times come only from the greedy CTC path of the same inference that produced the text, plus the chunk offset.
-  On mismatch raise `AlignmentError` -> 500 `alignment_failed`.
+- Times come only from the CTC path of the same inference that produced the text (greedy path, or with the LM the
+  forced alignment of its units on the same lattice), plus the chunk offset. On mismatch raise `AlignmentError`
+  -> 500 `alignment_failed`.
 - `WORD_TIMESTAMPS = False` in `app/transcription.py` until the R2b gate passes (docs/roadmap.md §2); flip it in the
   commit that carries the gate report.
 

@@ -1,7 +1,8 @@
-"""Word and cue timestamps from the greedy CTC path of each chunk (docs/api-contract.vi.md §4).
+"""Word and cue timestamps from the CTC path of each chunk (docs/api-contract.vi.md §4).
 
-The gateway decodes greedily, so the argmax path that produced the text is its alignment: no extra GPU work, no
-forced alignment. Times are absolute 16 kHz sample offsets (ints) until serialization.
+Greedy decoding: the argmax path that produced the text is its alignment, no extra GPU work. With the LM
+(`VIEGEM_LM`), the path is the forced alignment of the LM units on the same log-probs (`app.lm`, ADR 0002); either
+way it arrives in the `ChunkResult`. Times are absolute 16 kHz sample offsets (ints) until serialization.
 
 - A word is a maximal run of non-whitespace characters of the final text (a Vietnamese syllable, not a compound).
   Token pieces start a new word with "▁" and never contain it elsewhere, so each word is a run of units.

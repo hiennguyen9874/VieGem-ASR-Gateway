@@ -80,7 +80,13 @@ xử lý FIFO qua cùng `split`/`run_chunks`/`Joiner` như REST. Gửi có giớ
   streaming; `tests/gpu/test_viegem_parity.py`). Code vendored theo CC-BY-NC-SA-4.0 (ADR 0001).
 - Pins duy nhất: `assets/manifest.json` (repo, commit, size, SHA256 từng file); `scripts/stage_models.py` tải và
   kiểm tra. Chi tiết: [baseline.vi.md](baseline.vi.md).
-- Decode greedy, không KenLM. Output giữ nguyên: chữ thường, không dấu câu, số viết bằng chữ.
+- Decode greedy mặc định. `VIEGEM_LM=true` (tắt mặc định, chưa qua gate) bật language model theo ADR 0002: engine
+  thread chỉ chạy Model và trả log-softmax đã prune về ứng viên beam (≥ -5, hoặc argmax); `Scheduler` giải phóng
+  ngân sách GPU của job ngay rồi đưa lattice cho `LMPool` (`app/lm.py`), pool process CPU có giới hạn
+  (`VIEGEM_LM_WORKERS`, `VIEGEM_LM_MAX_PENDING`; đầy → 429, quá deadline → 503) chạy prefix beam search vendored
+  (`app/viegem/lm_decode.py`, alpha 0.35, beta 1.5, beam 32, unk_offset -10) rồi forced alignment trên cùng lattice.
+  Kết quả vẫn là `ChunkResult`, nên REST mọi format và Realtime đi qua cùng `run_chunks`/`Joiner`, `alignment.py`
+  không đổi. Output giữ nguyên: chữ thường, không dấu câu, số viết bằng chữ.
 - Peak đo được: ~2.4 GB VRAM, ~2.5 GB RSS lúc load.
 
 ## 5. Đóng gói

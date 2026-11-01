@@ -80,7 +80,8 @@ regardless of chunk length, see [baseline.vi.md](baseline.vi.md) §4), so §4 op
   60.5 ms vs ~50 ms for one chunk (≈ 6× throughput headroom on A100); requires parity and per-request deadlines.
 - [ ] Cut per-call launch overhead (~2,440 kernel launches, ~14 ms GPU time out of ~50 ms): CUDA graphs or
   `torch.compile` with fixed chunk shapes; gate on identical text vs `docs/baseline/offline.json`.
-- [ ] Optional KenLM decoding for final transcripts (opt-in, measured first; timestamps need forced alignment).
+- [ ] LM gate (#8 shipped KenLM decoding behind `VIEGEM_LM`, off by default, with forced-alignment timestamps):
+  measure fixture WER, p95 decode time per 30 s chunk and RTF, fix thresholds from them, then decide the default.
 
 ### 5. Smaller items
 

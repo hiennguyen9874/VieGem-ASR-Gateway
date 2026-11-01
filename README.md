@@ -14,6 +14,8 @@ Giới hạn cần biết:
 - Output là text gốc của model: chữ thường, không dấu câu, số viết bằng chữ. Chỉ `language=vi`; không có logprobs.
 - `srt`/`vtt` có thời gian từ đường CTC greedy (start của cue có thể trễ ~1 âm tiết). `verbose_json` không có
   `segments`; word timestamps chưa bật.
+- Language model (KenLM, `VIEGEM_LM`) **tắt mặc định** cho tới khi gate của nó (WER, thời gian decode) qua. Khi bật,
+  mọi format và Realtime trả text của LM; thời gian cue lấy bằng forced alignment trên cùng log-prob (ADR 0002).
 - Realtime: transcript chỉ có sau `input_audio_buffer.commit`; không có partial, không có VAD.
 - Chunk toàn số 0 trả transcript rỗng và không có cue. Audio gần 0 nhưng khác 0 vẫn qua greedy decode, có thể
   cho từ sai; gateway không dùng ngưỡng biên độ để tránh bỏ lời nói nhỏ ([baseline §5](docs/baseline.vi.md)).
@@ -44,7 +46,7 @@ Model và code pins giống nhau ở cả hai profile. Không cần cài CUDA to
 ## 2. Triển khai
 
 ```bash
-# 1. Tải model đã pin vào ./models và kiểm tra SHA256 (một lần, cần mạng)
+# 1. Tải model đã pin (gồm file LM ~71 MB) vào ./models và kiểm tra SHA256 (một lần, cần mạng)
 uv run --extra cu126 scripts/stage_models.py          # HF_TOKEN=<token> nếu repo yêu cầu
 uv run --extra cu126 scripts/stage_models.py --verify # kiểm tra lại, không cần mạng
 
@@ -150,6 +152,9 @@ không có alias cấu hình cũ. Đầy đủ: `app/config.py`.
 | `VIEGEM_DEVICE` | `cuda` | Thiết bị chạy model |
 | `VIEGEM_PRECISION` | `fp32` | Precision inference: `fp32` (WER fixture thấp nhất) hoặc `bf16` (autocast CUDA, file dài nhanh hơn ~2.6×); `fp16` bị từ chối (overflow). Số đo: docs/baseline.vi.md §8 |
 | `VIEGEM_WHISPER_ALIAS` | `false` | Chấp nhận model id `whisper-1` |
+| `VIEGEM_LM` | `false` | Decode bằng language model (KenLM beam search trên pool CPU, hằng số model card: alpha 0.35, beta 1.5, beam 32). Chưa qua gate; cần file LM đã stage (`viegem-asr/lm/`), thiếu → không start |
+| `VIEGEM_LM_WORKERS` | 2 | Số process CPU của pool LM (≤ `VIEGEM_LM_MAX_PENDING`, ≤ số CPU); mỗi process nạp LM riêng |
+| `VIEGEM_LM_MAX_PENDING` | 8 | Chunk đang chờ + đang decode trong pool LM; đầy → chờ `VIEGEM_QUEUE_TIMEOUT_SECONDS` rồi 429 |
 | `VIEGEM_LOG_LEVEL` | `INFO` | Mức log |
 | `VIEGEM_MAX_UPLOAD_BYTES` | 25 MiB | Cả body multipart → 413 |
 | `VIEGEM_MAX_AUDIO_SECONDS` | 1800 | Thời lượng sau decode → 400 `audio_too_long` |
@@ -173,8 +178,9 @@ trên phần cứng của bạn trước khi tăng.
 
 ## 5. Vận hành
 
-- **Readiness/liveness:** `/ready` 200 khi model đã load + warm-up và không đang drain/recover (dùng cho load
-  balancer). `/health` 503 khi load/recovery lỗi hoặc một call inference treo quá `VIEGEM_INFER_HANG_SECONDS`.
+- **Readiness/liveness:** `/ready` 200 khi model (và pool LM nếu `VIEGEM_LM=true`) đã load + warm-up và không đang
+  drain/recover (dùng cho load balancer). `/health` 503 khi load/recovery lỗi, một call inference treo quá
+  `VIEGEM_INFER_HANG_SECONDS`, hoặc pool LM hỏng (process chết, LM không nạp được).
   Docker không tự restart container chỉ vì `unhealthy`: dùng watchdog/orchestrator (autoheal, systemd, Kubernetes
   `livenessProbe`). Lỗi inference đơn lẻ trả 500 `inference_failed`, worker tự warm-up lại.
 - **Dừng/cập nhật:** `docker compose stop` (SIGTERM) ngừng nhận kết nối mới, request đang chạy được làm xong (≤ 30 s),

@@ -8,6 +8,9 @@
 - Dispatch is round-robin across lanes; live lanes take priority, but at most `live_priority_ratio` live jobs run
   in a row while a file job waits.
 - One dispatcher task feeds the worker one job at a time, so at most one inference runs, whatever the callers do.
+- With the LM on (`lm`), the worker returns a pruned lattice; the job's GPU budget is freed at once and its result
+  comes from the LM pool (beam search + forced alignment, ADR 0002), so the next chunk runs on the GPU meanwhile.
+  Callers still await one `ChunkResult` per job.
 - Cancelling a queued job (`job.cancel()`, cancelling the task awaiting it, or closing its lane) removes it and frees
   its budget. A running job is never interrupted: its result is discarded and its budget is freed only when the call
   ends, so a timed-out request cannot cause a second inference to start alongside it.
@@ -35,6 +38,7 @@ from app.errors import (
     server_busy,
     shutting_down,
 )
+from app.lm import Lattice, LMPool
 from app.observability import log, Metrics, request_id
 
 
@@ -102,8 +106,11 @@ class Lane:
 
 
 class Scheduler:
-    def __init__(self, worker: EngineWorker, config: Config, metrics: Metrics):
-        self._worker, self._metrics = worker, metrics
+    def __init__(
+        self, worker: EngineWorker, config: Config, metrics: Metrics, lm: LMPool | None = None
+    ):
+        self._worker, self._metrics, self._lm = worker, metrics, lm
+        self._lm_tasks: dict[asyncio.Task, Job] = {}  # LM decodes of jobs whose inference is done
         self._max_lanes = config.queue_max_lanes
         self._max_jobs = config.queue_max_jobs
         self._max_jobs_per_lane = config.queue_max_jobs_per_lane
@@ -145,7 +152,7 @@ class Scheduler:
     def open_lane(self, kind: JobKind) -> Lane:
         if self._closing:
             raise shutting_down()
-        if not self._worker.ready:
+        if not self._worker.ready or (self._lm is not None and not self._lm.healthy):
             raise model_not_ready()
         if self._lanes >= self._max_lanes or not self._has_capacity(1):
             self._count("rejected", kind)
@@ -166,10 +173,12 @@ class Scheduler:
         drained = True
         try:
             async with asyncio.timeout(timeout):
-                while self._jobs:
+                while self._jobs or self._lm_tasks:
                     await self._wait_change()
         except TimeoutError:
             drained = False
+        for task in list(self._lm_tasks):
+            task.cancel()  # its job fails with shutting_down
         for ring in self._rings.values():
             for lane in list(ring):
                 for job in list(lane.queue):
@@ -255,6 +264,8 @@ class Scheduler:
             job.cancel()
         if lane.running is not None:
             lane.running.cancel()  # result discarded when the call ends
+        for job in [j for j in self._lm_tasks.values() if j.lane is lane]:
+            job.cancel()  # stops waiting for its LM decode
         self._wake()
 
     def _count(self, outcome: str, kind: JobKind) -> None:
@@ -346,6 +357,9 @@ class Scheduler:
             elif error is not None:
                 outcome = "failed"
                 job.future.set_exception(error)
+            elif isinstance(result, Lattice):
+                outcome = "ok"
+                self._decode_lm(job, result)
             else:
                 outcome = "ok"
                 job.future.set_result(result)
@@ -361,3 +375,33 @@ class Scheduler:
                 queue_wait_s=round(now - job.enqueued_at, 4),
                 infer_s=round(infer_s, 4),
             )
+
+    # -- LM stage (ADR 0002) ---------------------------------------------------------------------------------------
+
+    def _decode_lm(self, job: Job, lattice: Lattice) -> None:
+        """Complete `job` from the LM pool. Cancelling the job (or closing its lane) stops the wait."""
+        task = asyncio.get_running_loop().create_task(self._lm_result(lattice, job.deadline))
+        self._lm_tasks[task] = job
+        job.future.add_done_callback(lambda _: task.cancel())
+
+        def done(t: asyncio.Task) -> None:
+            self._lm_tasks.pop(t, None)
+            self._wake()
+            error = None if t.cancelled() else t.exception()
+            if job.future.done():
+                return
+            if t.cancelled():  # only close() cancels the decode of a live job
+                job.future.set_exception(shutting_down())
+            elif error is None:
+                job.future.set_result(t.result())
+            elif isinstance(error, APIError):
+                job.future.set_exception(error)
+            else:  # bug in the LM stage: never leak details to the client
+                log(logging.ERROR, "scheduler.lm_error", exc_type=type(error).__name__)
+                job.future.set_exception(inference_failed())
+
+        task.add_done_callback(done)
+
+    async def _lm_result(self, lattice: Lattice, deadline: float | None) -> ChunkResult:
+        units, first, last = await self._lm.decode(lattice, self._worker.pieces, deadline)
+        return ChunkResult(self._worker.text(units), units, first, last, lattice.frames)

@@ -29,6 +29,7 @@ from app.errors import (
     send_error,
     shutting_down,
 )
+from app.lm import LMPool
 from app.observability import configure_logging, log, Metrics, request_id
 from app.realtime import install as install_realtime
 from app.scheduler import Scheduler
@@ -62,6 +63,7 @@ def create_app(config: Config | None = None, engine: Engine | None = None) -> Fa
             config.device,
             warmup_seconds=config.max_chunk_seconds,
             precision=config.precision,
+            lm=config.lm,
         )
 
     if not config.spool_dir.is_dir():
@@ -72,13 +74,33 @@ def create_app(config: Config | None = None, engine: Engine | None = None) -> Fa
         audio = AudioIngress(config, metrics)
     except FileNotFoundError as e:
         raise ConfigError(str(e)) from None
+    lm = None
+    if config.lm:
+        try:
+            lm = LMPool(
+                config.models_dir,
+                config.lm_workers,
+                config.lm_max_pending,
+                config.queue_timeout_seconds,
+                metrics,
+            )
+        except FileNotFoundError as e:
+            raise ConfigError(str(e)) from None
     worker = EngineWorker(engine, config.infer_hang_seconds, metrics)
-    scheduler = Scheduler(worker, config, metrics)
+    scheduler = Scheduler(worker, config, metrics, lm)
+
+    def serving_ready() -> bool:
+        return worker.ready and (lm is None or lm.ready)
+
+    def serving_healthy() -> bool:
+        return worker.healthy and (lm is None or lm.healthy)
 
     @asynccontextmanager
     async def lifespan(_: FastAPI):
         # The model loads on the worker thread; /health answers meanwhile and /ready turns true after warm-up.
         audio.start()
+        if lm is not None:
+            lm.start()  # loads the LM in each pool process, alongside the model load
         worker.start()
         scheduler.start()
         log(logging.INFO, "server.started")
@@ -88,6 +110,8 @@ def create_app(config: Config | None = None, engine: Engine | None = None) -> Fa
             log(logging.INFO, "server.draining")
             drained = await scheduler.close(config.shutdown_drain_seconds)
             stopped = await asyncio.to_thread(worker.stop, WORKER_STOP_SECONDS)
+            if lm is not None:
+                await asyncio.to_thread(lm.stop)
             audio.stop()
             level = logging.INFO if drained and stopped else logging.ERROR
             # A worker stuck in a call cannot be interrupted; it is a daemon thread and dies with the process.
@@ -108,8 +132,9 @@ def create_app(config: Config | None = None, engine: Engine | None = None) -> Fa
 
     @app.get("/health", response_model=Status)
     async def health():
-        """Liveness: fails only when a restart is needed (load/recovery failed, or an inference call hangs)."""
-        if not worker.healthy:
+        """Liveness: fails only when a restart is needed (load/recovery failed, an inference call hangs, or the LM
+        pool is broken)."""
+        if not serving_healthy():
             return APIError(
                 503, "server_error", "unhealthy", "Inference worker needs a restart."
             ).response()
@@ -117,10 +142,10 @@ def create_app(config: Config | None = None, engine: Engine | None = None) -> Fa
 
     @app.get("/ready", response_model=Status)
     async def ready():
-        """Readiness: model loaded and warmed up, worker not recovering or hung, not draining."""
+        """Readiness: model (and LM, when on) loaded and warmed up, worker not recovering or hung, not draining."""
         if scheduler.closing:
             return shutting_down().response()
-        if not worker.ready:
+        if not serving_ready():
             return model_not_ready().response()
         return Status(status="ready")
 

@@ -15,6 +15,7 @@ import numpy as np
 
 from app.config import Config
 from app.engine import ChunkResult
+from app.lm import Lattice, prune
 
 VI_LETTERS = "àáảãạăằắẳẵặâầấẩẫậđèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵ"
 CHARS = [chr(c) for c in range(33, 127)] + list(VI_LETTERS)
@@ -33,6 +34,23 @@ def fake_result(text: str, samples: int) -> ChunkResult:
     return ChunkResult(text, units, first, last, frames)
 
 
+def fake_lattice(text: str, samples: int, near: dict[str, str]) -> Lattice:
+    """The LM-on engine output for `fake_result(text)`: each path unit has prob 0.5 on its frames and, for a
+    character in `near`, its substitute 0.45 (greedy keeps `text`, a language model can pick the substitute)."""
+    result = fake_result(text, samples)
+    probs = np.full((result.frames, len(PIECES)), 1e-5)
+    probs[:, 0] = 0.9
+    for u, f, last in zip(result.units, result.first, result.last):
+        probs[f : last + 1, 0] = 1e-3  # pruned: no blank inside a unit, so the LM cannot repeat it
+        probs[f : last + 1, u] = 0.5
+        piece = PIECES[u]
+        if piece.lstrip("\u2581") in near:
+            alt = piece[: len(piece) - 1] + near[piece.lstrip("\u2581")]
+            probs[f : last + 1, UNIT[alt]] = 0.45
+    lp = np.log(probs / probs.sum(-1, keepdims=True))
+    return prune(lp.astype(np.float32))
+
+
 def wav(value: int, samples: int = 1600) -> np.ndarray:
     return np.full(samples, value, dtype=np.float32)
 
@@ -43,9 +61,15 @@ def config(**overrides) -> Config:
 
 
 class FakeEngine:
-    def __init__(self, delay: float = 0.0, text_fn: Callable[[np.ndarray], str] | None = None):
+    def __init__(
+        self,
+        delay: float = 0.0,
+        text_fn: Callable[[np.ndarray], str] | None = None,
+        near: dict[str, str] | None = None,
+    ):
         self.delay = delay
         self.text_fn = text_fn or (lambda w: str(int(w[0])))
+        self.near = near  # set: LM-on engine, returns `fake_lattice(text, samples, near)`
         self.lock = threading.Lock()
         self.active = 0
         self.max_active = 0
@@ -76,6 +100,9 @@ class FakeEngine:
     def pieces(self) -> tuple[str, ...]:
         return PIECES
 
+    def text(self, units) -> str:
+        return "".join(PIECES[u] for u in units).replace("\u2581", " ").strip()
+
     def transcribe(self, wav: np.ndarray) -> ChunkResult:
         with self.lock:
             self.active += 1
@@ -88,6 +115,8 @@ class FakeEngine:
             if self.fail_calls:
                 self.fail_calls -= 1
                 raise RuntimeError("CUDA error: simulated")
+            if self.near is not None:
+                return fake_lattice(self.text_fn(wav), len(wav), self.near)
             return fake_result(self.text_fn(wav), len(wav))
         finally:
             with self.lock:

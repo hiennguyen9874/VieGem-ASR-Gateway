@@ -18,13 +18,16 @@ import threading
 import time
 from collections.abc import Sequence
 from pathlib import Path
-from typing import NamedTuple, Protocol
+from typing import NamedTuple, Protocol, TYPE_CHECKING
 
 import numpy as np
 
 from app.config import PRECISIONS, SAMPLE_RATE
 from app.errors import inference_failed, model_not_ready
 from app.observability import log, Metrics
+
+if TYPE_CHECKING:
+    from app.lm import Lattice  # app.lm imports this module
 
 # The log-mel frontend crashes below 161 samples (docs/baseline.vi.md §7). Audio policy for short clips (return ""
 # without inference) belongs to the callers; this is the hard safety floor.
@@ -33,7 +36,8 @@ BLANK = 0  # CTC unit ids: 0 = blank, 1 = <unk>, 2.. = Gemma tokens
 
 
 class ChunkResult(NamedTuple):
-    """Greedy CTC result of one chunk: the text and the best path it was decoded from (no tensors).
+    """CTC result of one chunk: the text and the path it was decoded from (no tensors). Greedy: the best path; with
+    the LM (`app.lm`): the forced alignment of the LM units on the same log-probs.
 
     `units` is the collapsed path without blanks (<unk> kept, so it matches the path); unit i was emitted on encoder
     frames `first[i]..last[i]` (inclusive, relative to the chunk). `frames` is the number of valid encoder frames.
@@ -128,26 +132,40 @@ def force_align(
 class Engine(Protocol):
     def load(self) -> None: ...
     def warmup(self) -> None: ...
-    def transcribe(self, wav: np.ndarray) -> ChunkResult: ...
+    def transcribe(self, wav: np.ndarray) -> "ChunkResult | Lattice":
+        """Greedy `ChunkResult`; with the LM on, the pruned `app.lm.Lattice` instead (all-zero chunks stay an empty
+        `ChunkResult`)."""
+        ...
+
     def pieces(self) -> tuple[str, ...]:
         """Unit id -> token piece ("" for blank and <unk>); called once after `load`."""
         ...
 
+    def text(self, units: Sequence[int]) -> str:
+        """Transcript of a unit sequence (tokenizer only, no Model call); used for LM units."""
+        ...
+
 
 class VieGemEngine:
-    """Greedy, full-context decoding of one 16 kHz mono chunk (no LM).
+    """Full-context decoding of one 16 kHz mono chunk: greedy, or with `lm=True` (`VIEGEM_LM`) the pruned
+    log-probs for the LM pool (`app.lm`, ADR 0002). Beam search never runs here.
 
     `precision` (`VIEGEM_PRECISION`): "fp32" (default, lowest fixture WER) or "bf16" CUDA autocast; see
     `app.config.PRECISIONS` and docs/baseline.vi.md §8.
     """
 
     def __init__(
-        self, models_dir: Path, device: str, warmup_seconds: float, precision: str = "fp32"
+        self,
+        models_dir: Path,
+        device: str,
+        warmup_seconds: float,
+        precision: str = "fp32",
+        lm: bool = False,
     ):
         if precision not in PRECISIONS:
             raise ValueError(f"precision must be one of {PRECISIONS}, got {precision!r}")
         self._models_dir, self._warmup_seconds = models_dir, warmup_seconds
-        self._device, self._precision = device, precision
+        self._device, self._precision, self._lm = device, precision, lm
         self._model = self._tokenizer = self._units = None
 
     def load(self) -> None:
@@ -180,20 +198,37 @@ class VieGemEngine:
         ):
             return self._model(x, lens, streaming=False)
 
-    def transcribe(self, wav: np.ndarray) -> ChunkResult:
+    def transcribe(self, wav: np.ndarray) -> "ChunkResult | Lattice":
         # Chunking is the caller's job; the greedy best path is kept for timestamps and the text is decoded from it.
         logits, lens = self.forward(wav)
         frames = int(lens[0])
         # The model hallucinates on digital zeros. Do not threshold quiet speech; keep warm-up real.
         if not np.any(wav):
             return ChunkResult("", (), (), (), frames)
+        if self._lm:
+            return self._lattice(logits[0, :frames])
         units, first, last = ctc_path(logits[0, :frames].argmax(-1).cpu().numpy())
-        return ChunkResult(
-            self._units.decode(self._tokenizer, list(units)), units, first, last, frames
+        return ChunkResult(self.text(units), units, first, last, frames)
+
+    def _lattice(self, logits) -> "Lattice":
+        """Beam candidates of one chunk, pruned on the device so only they are copied (see `app.lm.prune`)."""
+        import torch
+
+        from app.lm import lattice_from_mask, TOKEN_MIN_LOGP
+
+        lp = torch.log_softmax(logits.float(), -1)
+        keep = lp >= TOKEN_MIN_LOGP
+        keep[torch.arange(len(lp), device=lp.device), lp.argmax(-1)] = True
+        rows, ids = keep.nonzero(as_tuple=True)
+        return lattice_from_mask(
+            rows.cpu().numpy(), ids.cpu().numpy(), lp[rows, ids].cpu().numpy(), len(lp)
         )
 
     def pieces(self) -> tuple[str, ...]:
         return ("", "") + tuple(self._tokenizer.convert_ids_to_tokens(self._units.gemma_ids))
+
+    def text(self, units: Sequence[int]) -> str:
+        return self._units.decode(self._tokenizer, list(units))
 
 
 def check_waveform(wav: np.ndarray) -> None:
@@ -267,7 +302,11 @@ class EngineWorker:
             self._thread.join(timeout)
         return not self._thread.is_alive()
 
-    async def transcribe(self, wav: np.ndarray) -> ChunkResult:
+    def text(self, units: Sequence[int]) -> str:
+        """Transcript of LM units; the tokenizer is read-only, so this runs on the caller's thread."""
+        return self._engine.text(units)
+
+    async def transcribe(self, wav: np.ndarray) -> "ChunkResult | Lattice":
         check_waveform(wav)
         fut: concurrent.futures.Future = concurrent.futures.Future()
         self._queue.put((wav, fut))

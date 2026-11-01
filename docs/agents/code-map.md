@@ -6,12 +6,16 @@ Each file's job, and the tests that cover it. Area rules live in [change-rules.m
 
 ```text
 viegem_loader.py  load the Model from staged local base + weights-only checkpoint only (no Hub resolution)
-viegem/           inference-only upstream model, features and units; CC-BY-NC-SA-4.0 LICENSE + NOTICE
+viegem/           inference-only upstream model, features, units and LM prefix beam search (lm_decode.py, sparse
+                    candidates); CC-BY-NC-SA-4.0 LICENSE + NOTICE
 config.py         typed VIEGEM_* env config, validated at startup; no default API key; VIEGEM_PRECISION (fp32|bf16)
 engine.py         VieGemEngine adapter + EngineWorker, the single thread that runs the model;
                     ChunkResult = text + greedy CTC path (units, first/last frame) + frames;
                     pure ctc_path (argmax -> path) and force_align (log-probs + units -> path, ADR 0002)
-scheduler.py      bounded fair queue (lanes = requests/sessions, jobs = chunks) feeding the worker
+scheduler.py      bounded fair queue (lanes = requests/sessions, jobs = chunks) feeding the worker; with the LM on,
+                    hands each job's lattice to LMPool after its inference and completes the job from it
+lm.py             VIEGEM_LM (ADR 0002): Lattice (pruned log-probs), pure prune / decode_lattice (beam search +
+                    forced alignment), LMPool (bounded spawn process pool, 429/503 on overload/deadline)
 audio.py          AudioIngress: multipart ingress (body limit before parser, bounded spool), sandboxed FFmpeg
                     `decode`, decoded-audio RAM budget (`hold`, `reserve`)
 chunking.py       `split`: quiet-point splitter, contiguous spans; <=100 ms audio -> no chunk (empty transcript)
@@ -51,16 +55,18 @@ subtitles.py        dependency-free SRT/VTT parser, shared by smoke_server.py an
 
 | Path | Needs | Covers |
 |---|---|---|
-| `unit/` | CPU + ffmpeg | manifests/pins, config, app over real Uvicorn with the fake engine, transcription params/joiner/end-to-end API (disconnect, SSE, drain, timed formats), alignment, forced alignment, subtitles, realtime (`test_realtime_units.py` pure, `test_realtime_api.py` real WS), observability, benchmark, capacity hardening |
+| `unit/` | CPU + ffmpeg | manifests/pins, config, app over real Uvicorn with the fake engine, transcription params/joiner/end-to-end API (disconnect, SSE, drain, timed formats), alignment, forced alignment, LM decoder vs upstream on a tiny ARPA (`test_lm_decode.py`), LM-on server/pool bounds (`test_lm_api.py`), subtitles, realtime (`test_realtime_units.py` pure, `test_realtime_api.py` real WS), observability, benchmark, capacity hardening |
 | `scheduler/` | CPU | scheduler/worker gate with the fake engine: serialization, bounds, fairness, cancel |
 | `audio/` | CPU + ffmpeg | formats, hostile inputs, decode bounds, multipart limits, temp cleanup |
 | `contract/` | CPU (+ Node for `js/`) | `examples/` parsed by the pinned Python SDK (`test_python_sdk.py`) and JS SDK (`js/contract.test.ts`); `test_server_sdk.py` runs a real server against both SDKs (REST over http, Realtime over wss with a self-signed cert, JS via `js/server.test.ts`) |
-| `gpu/` | CUDA + staged models | `test_viegem_parity.py` compares vendored VieGem with its pinned reference offline, exact logits in full context and streaming; real engine, pipeline, `test_server.py` (R2a), `test_realtime.py` (R3a) |
+| `gpu/` | CUDA + staged models | `test_viegem_parity.py` compares vendored VieGem with its pinned reference offline, exact logits in full context and streaming; real engine, pipeline, `test_server.py` (R2a), `test_realtime.py` (R3a), `test_lm.py` (LM-on REST + Realtime) |
 | `container/` | docker (+ NVIDIA toolkit, `VIEGEM_GPU`) | image gate; skips without docker |
 
 Shared helpers:
 
-- `fake_engine.py`: engine stand-in for CPU tests (`text_fn` for real decoded audio; synthetic CTC path).
+- `fake_engine.py`: engine stand-in for CPU tests (`text_fn` for real decoded audio; synthetic CTC path; `near` for
+  an LM-on engine that returns a lattice).
+- `lm_fixture.py`: tiny hand-made ARPA LM and `stage_tiny_lm(models_dir)`.
 - `live_server.py`: `serve(...)` runs real Uvicorn (websockets-sansio, optional self-signed TLS via `tls_dir`)
   around `create_app`; also float-WAV/PCM24 audio helpers and the raw realtime client `WS`.
 - `fixtures/`: small committed fixtures + `manifest.json` (hashes, references, license).

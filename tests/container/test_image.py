@@ -57,6 +57,9 @@ def test_image_contains_only_the_app(image, container_cuda):
     assert sorted(listing) == [".venv", "app"]
     for path in ("/srv/assets", "/srv/references", "/srv/models", "/srv/tests", "/srv/.git", "/srv/fixtures-large", "/models"):
         assert run_in_image(image, f"test -e {path} && echo present || echo absent").strip() == "absent", path
+    # kenlm is compiled in the builder stage only: importable, and no compiler is left in the runtime image.
+    assert run_in_image(image, 'python -c "import kenlm; print(kenlm.__name__)"').strip() == "kenlm"
+    assert run_in_image(image, "command -v cc gcc g++ c++ make cmake || echo none").strip() == "none"
     versions = run_in_image(image, "python --version; ffmpeg -version | head -1")
     assert "Python 3.12.14" in versions and "ffmpeg version 6.1.1" in versions
     torch_version = run_in_image(image, 'python -c "import torch; print(torch.__version__, torch.version.cuda)"').strip()

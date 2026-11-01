@@ -57,6 +57,14 @@
         "viegem_asr.pt": {
           "size": 310593984,
           "sha256": "18104f4551f48c23e0e3b76433747f6fca7d4a3069a4330e691a1bba2df8cfa6"
+        },
+        "lm/viegem_lm.bin": {
+          "size": 71284635,
+          "sha256": "4416f163f6801e91c240716f016301eba8924688a5e9ad8b30652c255e75b510"
+        },
+        "lm/viegem_lm.unigrams.txt": {
+          "size": 187858,
+          "sha256": "7145a85a63da07521ee7204607a7eb0a82d9e5e590d77535234e6b74d1d9f3d8"
         }
       }
     }

@@ -83,7 +83,8 @@ Kết quả:
 - `srt` → `200 text/plain; charset=utf-8`: cue `n\nHH:MM:SS,mmm --> HH:MM:SS,mmm\ntext\n\n`, đánh số từ 1; không có
   cue → body rỗng. `vtt` → cùng content type, `WEBVTT\n\n` rồi `HH:MM:SS.mmm --> HH:MM:SS.mmm\ntext\n\n`; không có
   cue → chỉ header. Cả hai SDK trả nguyên body (string). Ví dụ `examples/transcription.srt`, `examples/transcription.vtt`.
-- Timestamps (`srt`/`vtt`, sau này `words`): lấy từ đường CTC greedy của chính lần inference sinh ra text, cộng offset
+- Timestamps (`srt`/`vtt`, sau này `words`): lấy từ đường CTC greedy của chính lần inference sinh ra text (khi
+  `VIEGEM_LM=true`: đường forced alignment của unit LM trên cùng log-prob), cộng offset
   tuyệt đối của chunk; không chạy thêm GPU. **Từ** = dãy ký tự không phải khoảng trắng của transcript (âm tiết tiếng
   Việt, không phải từ ghép); thời gian của từ = các frame 40 ms mà model phát unit của nó (spike, thường 1 frame,
   nằm trong/cuối âm tiết), nên start của cue có thể trễ ~1 âm tiết so với lúc bắt đầu nói (đo: `docs/baseline/alignment_probe.json`).

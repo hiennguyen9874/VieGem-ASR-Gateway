@@ -161,7 +161,10 @@ CUDA_VISIBLE_DEVICES=<gpu> HF_HOME=$(mktemp -d) uv run --extra cu126 --offline s
 | `fleurs_comparison.json` | Tổng hợp dev và paired bootstrap theo sentence id |
 | `silence_probe.json` | 37 case số 0, noise và lời nói nhỏ; không thêm bộ lọc |
 
-Chưa đo: LM/KenLM, Python 3.11, cold load khi page cache lạnh, tải đồng thời (xem [roadmap.md](roadmap.md)).
+Chưa đo: gate LM/KenLM (`VIEGEM_LM`, #8: WER fixture, p95 decode mỗi chunk 30 s, RTF), Python 3.11, cold load khi
+page cache lạnh, tải đồng thời (xem [roadmap.md](roadmap.md)). Thăm dò một lần, không phải bằng chứng gate (A100
+host, fp32): decode LM (beam search + forced alignment) của 30 s đầu `vi_long` mất 0.12 s trên một process CPU; LM
+giữ nguyên text của `vi_a`/`vi_b` nhưng trả `có` cho `short_200ms.wav` (greedy `""`: thưởng chèn từ beta).
 
 ## 8. Precision, dev set lớn hơn và near-zero (A100/cu126)
 

@@ -13,6 +13,8 @@ dependencies = [
     "uvicorn>=0.54.0",
     "python-multipart>=0.0.20",
     "websockets>=13,<16",
+    # LM decoding (VIEGEM_LM, ADR 0002). Published as an sdist only: built from source (Docker builder stage).
+    "kenlm==0.3.0",
 ]
 
 # Select exactly one runtime profile: uv sync --extra cu126 (baseline) or --extra cu128 (Blackwell).
