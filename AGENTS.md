@@ -6,7 +6,6 @@ Docker-only Vietnamese ASR gateway with a scoped OpenAI REST/SSE and Realtime AP
 
 - Pass exactly one `--extra cu126` or `--extra cu128` to every `uv sync` / `uv run`; otherwise uv can select unprofiled PyPI torch.
 - The host is shared: choose a free GPU with `nvidia-smi` and a free server port (8000 is taken).
-- Treat `references/` as read-only. Keep credentials, audio and transcripts out of commits, logs and reports.
 - A feature ships only after its gate passes with recorded evidence. Finish changes with code, tests and affected documentation in agreement; report any unrun checks.
 
 ## Task pointers
