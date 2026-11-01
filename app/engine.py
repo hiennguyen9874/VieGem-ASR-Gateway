@@ -29,7 +29,7 @@ from app.observability import log, Metrics
 if TYPE_CHECKING:
     from app.lm import Lattice  # app.lm imports this module
 
-# The log-mel frontend crashes below 161 samples (docs/baseline.vi.md §7). Audio policy for short clips (return ""
+# The log-mel frontend crashes below 161 samples (docs/baseline.md). Audio policy for short clips (return ""
 # without inference) belongs to the callers; this is the hard safety floor.
 MIN_FORWARD_SAMPLES = 161
 BLANK = 0  # CTC unit ids: 0 = blank, 1 = <unk>, 2.. = Gemma tokens
@@ -151,7 +151,7 @@ class VieGemEngine:
     log-probs for the LM pool (`app.lm`, ADR 0002). Beam search never runs here.
 
     `precision` (`VIEGEM_PRECISION`): "fp32" (default, lowest fixture WER) or "bf16" CUDA autocast; see
-    `app.config.PRECISIONS` and docs/baseline.vi.md §8.
+    `app.config.PRECISIONS` and docs/baseline.md, Precision.
     """
 
     def __init__(

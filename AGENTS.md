@@ -1,50 +1,31 @@
 # VieGem ASR Gateway
 
-Docker-only VieGem gateway serving VieGem-ASR (`viegem-asr`, Vietnamese CTC ASR) through a scoped OpenAI API: REST/SSE (R1),
-verbose_json/srt/vtt (R2a), Realtime with explicit commit (R3a). Pre-release `v0.1.0-rc.1`. TLS, CORS and
-per-client rate limits belong to the operator's infrastructure in front of it.
-
-## Agent docs
-
-- Code map, for finding where something lives or which test covers it: docs/agents/code-map.md
-- Commands, for setup, tests by tier, a local server, smoke, image gate and lint: docs/agents/commands.md
-- Change rules, before editing the inference path, audio, timestamps, realtime, API contract, config, or
-  pins/image: docs/agents/change-rules.md (read the section for each area you touch)
-
-## Project docs (Vietnamese; each is the source of truth for its topic)
-
-- Deploy, usage, config table, operations: README.md
-- Architecture: docs/deployment-design.vi.md
-- API payloads, error codes, capability matrix: docs/api-contract.vi.md
-- Pins, measurements, frontend limits: docs/baseline.vi.md
-- Image gate status and procedure: docs/container-gate.vi.md
-- Shipped milestones, evidence, deviations, definition of done: docs/implementation-plan.vi.md
-- Unshipped work (R2b word timestamps, R3b VAD, R4 capacity, scale): docs/roadmap.md
+Docker-only Vietnamese ASR gateway with a scoped OpenAI REST/SSE and Realtime API. TLS, CORS and per-client rate limits belong to the operator's infrastructure.
 
 ## Always
 
-- Pass exactly one `--extra cu126` or `--extra cu128` to every `uv sync` / `uv run`; bare uv can pull the
-  upstream's unprofiled PyPI torch.
-- The host is shared: set `CUDA_VISIBLE_DEVICES` to a GPU that `nvidia-smi` shows free, and run local servers on a
-  free port (8000 is taken).
-- One model instance, one thread: only `app/engine.py` calls the Model, fed through `Scheduler` lanes. Endpoints reach
-  it via `run_chunks` + `Joiner`.
-- A feature ships only after its gate passes with recorded evidence; until then it stays switched off.
-- Treat `references/` (upstream submodules) as read-only: read it for behaviour; app code and images stay
-  independent of it.
-- Keep `HF_TOKEN`, API keys, audio and transcripts out of commits, logs and reports.
-- A change is done when code, tests and the docs describing it agree.
+- Pass exactly one `--extra cu126` or `--extra cu128` to every `uv sync` / `uv run`; otherwise uv can select unprofiled PyPI torch.
+- The host is shared: choose a free GPU with `nvidia-smi` and a free server port (8000 is taken).
+- Treat `references/` as read-only. Keep credentials, audio and transcripts out of commits, logs and reports.
+- A feature ships only after its gate passes with recorded evidence. Finish changes with code, tests and affected documentation in agreement; report any unrun checks.
 
-## Agent skills
+## Task pointers
 
-### Issue tracker
+Read every applicable guide before editing:
 
-Track issues in GitHub Issues using `gh`. See `docs/agents/issue-tracker.md`.
+- **Inference, scheduler, LM or vendored model:** [inference.md](docs/agents/inference.md).
+- **Audio ingress, chunking or timestamps:** [audio.md](docs/agents/audio.md).
+- **API, Realtime or configuration:** [api.md](docs/agents/api.md).
+- **Model/dependency pins, image or release gate:** [deployment.md](docs/agents/deployment.md).
+- **Setup, tests, local server, smoke or probes:** [commands.md](docs/agents/commands.md).
+- **Find implementation or tests:** [code-map.md](docs/agents/code-map.md).
+- **Domain terminology or architecture decisions:** [domain.md](docs/agents/domain.md).
+- **GitHub issues or wayfinder:** [issue-tracker.md](docs/agents/issue-tracker.md); **triage labels:** [triage-labels.md](docs/agents/triage-labels.md).
 
-### Triage labels
+## Project sources
 
-Use the canonical triage labels. See `docs/agents/triage-labels.md`.
-
-### Domain docs
-
-For domain terminology and architecture decisions, use the single-context layout. See `docs/agents/domain.md`.
+- Overview and quick start: [README.md](README.md); deployment, usage, configuration, operations: [docs/deployment.md](docs/deployment.md), [docs/usage.md](docs/usage.md), [docs/configuration.md](docs/configuration.md), [docs/operations.md](docs/operations.md).
+- Wire contract and SDK examples: [docs/api/](docs/api/README.md).
+- Model pins, measurements and frontend limits: [docs/baseline.md](docs/baseline.md).
+- Tests and image gate procedure/evidence: [docs/testing.md](docs/testing.md).
+- Architecture: [docs/architecture.md](docs/architecture.md); release status, evidence and pending gates: [docs/roadmap.md](docs/roadmap.md).

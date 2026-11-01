@@ -16,7 +16,3 @@ Use the glossary's terms in the context they describe, including in issues, prop
 ## Flag ADR conflicts
 
 Surface conflicts with relevant ADRs explicitly instead of silently overriding them; explain why a decision might need reopening.
-
-## Migration status
-
-The gateway serves VieGem-ASR (greedy). Precision (#6) and the LM (#8–#10) are not done yet; ADR 0002 describes the LM design that is not yet built.

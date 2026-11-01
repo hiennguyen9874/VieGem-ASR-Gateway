@@ -1,4 +1,4 @@
-"""R1 container gate (docs/container-gate.vi.md): build, non-root, no secrets or extra files in the image, offline
+"""R1 container gate (docs/testing.md): build, non-root, no secrets or extra files in the image, offline
 start to /ready with the models mounted read-only, smoke against the baseline, graceful SIGTERM, restart.
 
 Needs Docker; the runtime checks also need the NVIDIA Container Toolkit, a free GPU and staged models:

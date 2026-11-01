@@ -1,6 +1,6 @@
 """Split decoded audio into inference chunks at quiet points, keeping absolute sample offsets.
 
-Policy (docs/api-contract.vi.md §4):
+Policy (docs/api/transcriptions.md):
 - Audio of at most `MIN_AUDIO_SAMPLES` (100 ms at 16 kHz), empty included, yields no chunk: the transcript is ""
   and the model is not called. The log-mel frontend crashes below 161 samples, and the reference drops such pieces.
 - Otherwise the chunks cover the audio exactly and in order: chunk i ends where chunk i+1 starts, the first starts

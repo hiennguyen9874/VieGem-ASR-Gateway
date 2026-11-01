@@ -41,7 +41,7 @@ DECODER = {
 }
 # Lengths (samples @16 kHz) probed through the model without the quiet splitter, to find the frontend minimum.
 SHORT_PROBE = [1, 160, 161, 320, 480, 640, 1280, 1600, 1601, 3200, 8000]
-# Recorded QUAN full-context baseline on the pinned FLEURS fixtures (docs/baseline.vi.md §4).
+# Recorded QUAN full-context baseline on the pinned FLEURS fixtures (docs/baseline.md).
 FIXTURE_MAX_WER = 17 / 329
 
 

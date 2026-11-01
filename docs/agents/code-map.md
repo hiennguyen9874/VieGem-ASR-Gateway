@@ -1,6 +1,6 @@
 # Code map
 
-Each file's job, and the tests that cover it. Area rules live in [change-rules.md](change-rules.md).
+Each file's job and the tests that cover it. Change guides are linked from [AGENTS.md](../../AGENTS.md).
 
 ## app/ (the only code shipped in the image)
 
@@ -64,11 +64,9 @@ subtitles.py        dependency-free SRT/VTT parser, shared by smoke_server.py an
 
 Shared helpers:
 
-- `fake_engine.py`: engine stand-in for CPU tests (`text_fn` for real decoded audio; synthetic CTC path; `near` for
-  an LM-on engine that returns a lattice).
+- `fake_engine.py`: engine stand-in for CPU tests (`text_fn` for real decoded audio; synthetic CTC path; `near` for an LM-on engine that returns a lattice).
 - `lm_fixture.py`: tiny hand-made ARPA LM and `stage_tiny_lm(models_dir)`.
-- `live_server.py`: `serve(...)` runs real Uvicorn (websockets-sansio, optional self-signed TLS via `tls_dir`)
-  around `create_app`; also float-WAV/PCM24 audio helpers and the raw realtime client `WS`.
+- `live_server.py`: `serve(...)` runs real Uvicorn (websockets-sansio, optional self-signed TLS via `tls_dir`) around `create_app`; also float-WAV/PCM24 audio helpers and the raw realtime client `WS`.
 - `fixtures/`: small committed fixtures + `manifest.json` (hashes, references, license).
 
 ## Other paths

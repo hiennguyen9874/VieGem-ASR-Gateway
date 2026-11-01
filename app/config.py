@@ -17,7 +17,7 @@ SAMPLE_RATE = 16000  # Model input rate; queue budgets are counted in 16 kHz sam
 PREFIX = "VIEGEM_"
 MIN_API_KEY_LENGTH = 16
 MIN_CHUNK_SECONDS = 1.0
-# Inference precision (docs/baseline.vi.md §8): fp32 has the lowest fixture WER; bf16 is CUDA autocast; fp16 overflows.
+# Inference precision (docs/baseline.md): fp32 has the lowest fixture WER; bf16 is CUDA autocast; fp16 overflows.
 PRECISIONS = ("fp32", "bf16")
 
 
@@ -31,7 +31,7 @@ class Config:
     models_dir: Path = Path("models")
     device: str = "cuda"
     precision: str = "fp32"
-    whisper_alias: bool = False  # opt-in alias `whisper-1` (docs/api-contract.vi.md §3)
+    whisper_alias: bool = False  # opt-in alias `whisper-1` (docs/api/README.md, Models)
     # LM decoding (ADR 0002): off until its gate passes. A pool of CPU processes, each with the LM loaded.
     lm: bool = False
     lm_workers: int = 2

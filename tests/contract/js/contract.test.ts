@@ -1,4 +1,4 @@
-// The examples in ../examples (docs/api-contract.vi.md) against the pinned OpenAI JS SDK.
+// The examples in ../examples (docs/api/) against the pinned OpenAI JS SDK.
 // `tsc --noEmit` type-checks the typed copies below; `node --test` runs this file (Node >= 23.6 strips types),
 // checks the typed copies equal the shared example files, and parses the HTTP examples with the real SDK client.
 import assert from 'node:assert/strict';

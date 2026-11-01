@@ -1,8 +1,6 @@
 # Commands
 
-Every `uv` command takes exactly one CUDA profile: `--extra cu126` (baseline) or `--extra cu128` (Blackwell,
-e.g. RTX 5090). The examples use cu126; swap in cu128 consistently. The host is shared: pick `<gpu>` from
-`nvidia-smi` and `<port>` from the free ports (8000 is taken; the container binds 18000).
+Every `uv` command takes exactly one CUDA profile: `--extra cu126` (baseline) or `--extra cu128` (Blackwell, e.g. RTX 5090). The examples use cu126; swap in cu128 consistently. The host is shared: pick `<gpu>` from `nvidia-smi` and `<port>` from the free ports (8000 is taken; the container binds 18000).
 
 ## Setup
 
@@ -23,7 +21,7 @@ VIEGEM_GPU=<gpu> uv run --extra cu128 --offline pytest tests/container --contain
 uv run --extra cu126 pre-commit run --all-files         # lint + format
 ```
 
-The CPU tiers need `ffmpeg` on PATH. Image gate details (cu126 run, CPU diagnostics): docs/container-gate.vi.md.
+The CPU tiers need `ffmpeg` on PATH. Image gate details (cu126 run, CPU diagnostics): docs/testing.md.
 
 ## Local server and smoke
 
@@ -42,11 +40,9 @@ OPENAI_API_KEY=<key> uv run --extra cu126 scripts/demo_page.py --base-url http:/
     [--add <audio file or dir>] [--only <case ids or categories>] [--out outputs/<name>]
 ```
 
-If `uv run ... uvicorn` fails with `Failed to spawn`, the venv was created under another path (stale shebangs):
-use `uv run --extra cu126 python -m uvicorn ...` or recreate `.venv`.
+If `uv run ... uvicorn` fails with `Failed to spawn`, the venv was created under another path (stale shebangs): use `uv run --extra cu126 python -m uvicorn ...` or recreate `.venv`.
 
-One process per GPU, always one worker. Start the server from a shell with no `VIEGEM_GPU`, `VIEGEM_BUILD_CUDA` or
-`VIEGEM_TEST_*` exported: unknown `VIEGEM_*` variables abort startup.
+One process per GPU, always one worker. Start the server from a shell with no `VIEGEM_GPU`, `VIEGEM_BUILD_CUDA` or `VIEGEM_TEST_*` exported: unknown `VIEGEM_*` variables abort startup.
 
 ## Baselines and probes
 
@@ -74,9 +70,6 @@ CUDA_VISIBLE_DEVICES=<gpu> uv run --extra cu126 --offline scripts/eval_fleurs.py
 # Repeat with --precision fp32 and a separate output file.
 ```
 
-The FLEURS/silence scripts block network, verify staged model hashes and save metadata only.
-The local historical-QUAN harness and paired-bootstrap reproduction are retained in
-`outputs/precision/`; their scope/results are documented in docs/baseline.vi.md §8.
-This is exploratory evidence, not a passed release gate.
+The FLEURS/silence scripts block network, verify staged model hashes and save metadata only. The local historical-QUAN harness and paired-bootstrap reproduction are retained in `outputs/precision/`; their scope/results are documented in docs/baseline.md, Precision. This is exploratory evidence, not a passed release gate.
 
-Benchmark invocation (R4): docs/roadmap.md §1.
+Benchmark invocation (R4): docs/roadmap.md (R4).

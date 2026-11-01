@@ -27,7 +27,7 @@ cu128 = ["torch==2.11.0"]
 dev = [
     "pytest",
     "pre-commit>=4.7.0",
-    # Pinned SDK used to verify the API contract (docs/api-contract.vi.md).
+    # Pinned SDK used to verify the API contract (docs/api/).
     "openai[realtime]==3.31.0",
 ]
 

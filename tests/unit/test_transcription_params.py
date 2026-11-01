@@ -1,4 +1,4 @@
-"""Form validation of POST /v1/audio/transcriptions (docs/api-contract.vi.md §4), the chunk joiner and model ids."""
+"""Form validation of POST /v1/audio/transcriptions (docs/api/transcriptions.md), the chunk joiner and model ids."""
 
 import json
 from pathlib import Path

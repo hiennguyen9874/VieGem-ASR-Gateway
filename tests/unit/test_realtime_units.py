@@ -1,4 +1,4 @@
-"""Pure parts of the realtime adapter (docs/api-contract.vi.md §6): turn buffer, session.update, event dispatch."""
+"""Pure parts of the realtime adapter (docs/api/realtime.md): turn buffer, session.update, event dispatch."""
 
 import asyncio
 import json

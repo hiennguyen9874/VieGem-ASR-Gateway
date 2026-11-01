@@ -1,32 +1,44 @@
 # Roadmap
 
-Current release: `v0.1.0-rc.1` (pre-release). Details of what ships: [implementation-plan.vi.md](implementation-plan.vi.md).
+Release hiện tại: `v0.1.0-rc.1` (pre-release). Một tính năng chỉ được bật sau khi gate của nó đạt và có bằng chứng ghi lại.
 
-## Shipped
+## Trạng thái
 
-| Release | Scope |
-|---|---|
-| R1 | `/v1/models`, `POST /v1/audio/transcriptions` (`json`, `text`, SSE), auth, OpenAI errors, limits, Docker (one GPU) |
-| R2a | `verbose_json` (no `segments`), `srt`, `vtt` with timestamps from the greedy CTC path |
-| R3a | Realtime transcription over WebSocket `/v1/realtime`, explicit commit (`turn_detection: null`) |
+| Release | Nội dung | Trạng thái |
+|---|---|---|
+| R1 | REST `json`/`text`, SSE, auth, lỗi OpenAI, giới hạn, Docker một GPU | **Xong** |
+| R2a | `verbose_json` (không `segments`), `srt`, `vtt` với timestamps CTC | **Xong** |
+| R3a | Realtime WebSocket, explicit commit | **Xong** |
+| R2b | Word timestamps | Chờ bộ annotate tay |
+| R3b | Server VAD, partial | Chưa làm |
+| R4 | Capacity đo trên GPU riêng | Có tooling, chưa đo |
 
-## Not implemented yet
+## Bằng chứng hiện có
 
-Ordered by priority. A feature is enabled only after its gate passes with recorded evidence.
+- **CPU suite:** unit + scheduler + audio + contract (SDK Python/JS thật, server HTTP/WSS thật) pass.
+- **GPU tier (A100, fp32):** 18 passed, gồm parity, silence, Realtime, LM. Server smoke và alignment probe 0 failure.
+- **WER fixture:** 20/329, vẫn vượt ngưỡng QUAN 17/329; ngoại lệ đã chấp nhận ở #4 ([baseline](baseline.md)).
+- **Container gate:** chỉ có bằng chứng cu128 của image cũ (QUAN); cần chạy lại cu126 và cu128 (#5, [testing](testing.md#gate-docker-image)).
+- **LM (#8):** code có, tắt mặc định; chưa qua gate.
 
-### 1. Production capacity and limits (R4)
+## Lệch so với thiết kế ban đầu
 
-Current defaults (`VIEGEM_QUEUE_MAX_LANES=32`, `VIEGEM_MAX_SESSIONS=16`, …) are finite safety budgets, **not measured
-capacity**. Tooling exists (`scripts/benchmark.py`); the measurement does not.
+- `verbose_json` không có `segments`: schema SDK bắt buộc field kiểu Whisper mà model không có dữ liệu thật.
+- Realtime phát `conversation.item.added` (GA) thay vì `conversation.item.created` (beta).
+- Không dùng `LiveSession` của reference: Realtime chỉ infer khi commit, qua cùng splitter/joiner với REST.
+- Thêm profile `cu128` (torch 2.11.0) cho Blackwell vì không có wheel 2.14.1 cho CUDA 12.8.
 
-- [ ] Benchmark on an **exclusive** GPU: REST short/long, SSE, WebSocket commits and mixed, ramping clients;
-  ≥ 3 runs per level, ≥ 100 successes per group for p95. Fix workload, p95 SLO and error budget before measuring.
-- [ ] Soak ≥ 1 h at the chosen level behind real TLS; RSS/VRAM headroom, no occupancy growth.
-- [ ] Failure drills on the real deployment: SIGTERM drain, process/container kill and restart, CUDA OOM recovery,
-  hung-worker watchdog restart.
-- [ ] Set limits from the measurements, record a decision table (hardware, image digest, config, max tested load,
-  selected limit) and a rollback digest.
-- [ ] cu126 GPU container gate on a compatible GPU (A100/H100); so far only cu128 passed on GPU.
+## Việc còn lại (theo ưu tiên)
+
+### 1. Capacity (R4)
+
+Mặc định hiện tại (`VIEGEM_QUEUE_MAX_LANES=32`, `VIEGEM_MAX_SESSIONS=16`, …) là giới hạn an toàn, **chưa đo**.
+
+- [ ] Chạy GPU container gate cu126 trên A100/H100 và cu128 cho image mới.
+- [ ] Benchmark trên GPU **riêng**: REST ngắn/dài, SSE, WebSocket, mixed; ≥ 3 lần mỗi mức, ≥ 100 thành công mỗi nhóm cho p95. Chốt workload, SLO p95, error budget trước khi đo.
+- [ ] Soak ≥ 1 h sau TLS thật; theo dõi RSS/VRAM.
+- [ ] Diễn tập lỗi: SIGTERM drain, kill/restart, CUDA OOM, watchdog worker treo.
+- [ ] Đặt giới hạn từ số đo; ghi bảng quyết định (phần cứng, image digest, config, tải tối đa, giới hạn chọn) và digest rollback.
 
 ```bash
 uv run --extra cu128 scripts/benchmark.py --engine gpu --hardware '<gpu>-exclusive-cu128' \
@@ -34,70 +46,54 @@ uv run --extra cu128 scripts/benchmark.py --engine gpu --hardware '<gpu>-exclusi
   --workload mixed --phase warm --server-pid <host pid> --out docs/baseline/capacity-mixed-warm.json
 ```
 
-A benchmark report (exit 0) is not a capacity claim; client counts are closed-loop, not microphone sessions.
+Report benchmark (exit 0) không phải tuyên bố capacity; số client là closed-loop.
 
-**Diagnostic run (not gate evidence).** One run per level at `8cffbe7` on a shared host (A100-PCIE-40GB, cu126,
-local server, no proxy), `--workload short|long`, 30 requests/client, 0 errors/overloads. WS, SSE and mixed workloads, ≥ 3 runs
-and soak were not done.
+**Chạy chẩn đoán (không phải gate):** A100 dùng chung, model QUAN, 30 request/client, 0 lỗi.
 
-| Clients | Short 8.88 s: audio s/s · p50 · p95 | Long 106.62 s: audio s/s · p50 · p95 |
+| Clients | Ngắn 8.88 s: audio s/s · p50 · p95 | Dài 106.62 s: audio s/s · p50 · p95 |
 |---:|---|---|
-| 1 | 71 · 0.12 s · 0.13 s | 279 · 0.39 s · 0.40 s |
-| 2 | 128 · 0.13 s · 0.16 s | 412 · 0.50 s · 0.62 s |
-| 4 | 137 · 0.25 s · 0.28 s | 421 · 1.00 s · 1.14 s |
-| 8 | 132 · 0.52 s · 0.62 s | 426 · 1.99 s · 2.08 s |
-| 16 | 136 · 1.03 s · 1.16 s | 413 · 4.10 s · 4.36 s |
+| 1 | 71 · 0.12 · 0.13 s | 279 · 0.39 · 0.40 s |
+| 2 | 128 · 0.13 · 0.16 s | 412 · 0.50 · 0.62 s |
+| 4 | 137 · 0.25 · 0.28 s | 421 · 1.00 · 1.14 s |
+| 8 | 132 · 0.52 · 0.62 s | 426 · 1.99 · 2.08 s |
+| 16 | 136 · 1.03 · 1.16 s | 413 · 4.10 · 4.36 s |
 
-Throughput saturates at ~2 clients; beyond that latency grows linearly with queue wait. At saturation the GPU was
-~38 % utilized while the server process used ~470 % CPU: the single model thread is launch-bound (~50 ms per call
-regardless of chunk length, see [baseline.vi.md](baseline.vi.md) §4), so §4 optimizations raise this ceiling.
+Throughput bão hòa ở ~2 client; sau đó latency tăng tuyến tính. GPU chỉ ~38% utilization: thread model bị giới hạn bởi kernel launch (~50 ms mỗi call), nên các tối ưu ở mục 4 nâng trần này.
 
 ### 2. Word timestamps (R2b)
 
-`timestamp_granularities[]=word` returns 400 until this gate passes (`WORD_TIMESTAMPS = False` in
-`app/transcription.py`). Alignment code and the evaluator (`scripts/eval_alignment.py`) exist.
+`timestamp_granularities[]=word` trả 400 cho tới khi gate đạt (`WORD_TIMESTAMPS = False` trong `app/transcription.py`). Code alignment và evaluator (`scripts/eval_alignment.py`) đã có.
 
-- [ ] Hand-annotated word boundaries in `tests/fixtures/alignment/` (Praat/Audacity, not another aligner):
-  ≥ 200 words, ≥ 10 utterances, `dev`/`test` splits.
-- [ ] Gate on `test`: ≥ 90 % of matched words within 100 ms, median error ≤ 50 ms (thresholds fixed in advance).
-- [ ] Flip the switch in the commit that carries the report; add `words` to `verbose_json`.
+- [ ] Annotate tay ranh giới từ trong `tests/fixtures/alignment/` (Praat/Audacity, không dùng aligner khác): ≥ 200 từ, ≥ 10 utterance, chia `dev`/`test`.
+- [ ] Gate trên `test`: ≥ 90% từ lệch ≤ 100 ms, median ≤ 50 ms (ngưỡng chốt trước).
+- [ ] Bật switch trong commit chứa report; thêm `words` vào `verbose_json`.
 
-### 3. Server VAD and partial transcripts (R3b)
+### 3. Server VAD và partial (R3b)
 
-- [ ] Acoustic VAD (pin model, check license and CPU cost) with `threshold`, `prefix_padding_ms`,
-  `silence_duration_ms`; emit `input_audio_buffer.speech_started/stopped` and auto-commit. Do not reuse the CTC
-  blank endpoint as VAD. `semantic_vad` stays rejected.
-- [ ] Optional: partial text before commit via a stable-prefix decoder (append-only deltas, defined final
-  correction policy), only with full integration tests.
-- [ ] Candidate for partials: VieGem-ASR's own streaming mode (`streaming=True`: reader attention limited to 0.48 s
-  chunks, no look-ahead; model card FLEURS WER 9.02 vs 7.33 full context). The gateway decodes full context only;
-  serving this mode needs its own gate (WER, latency, final-correction policy).
+- [ ] VAD âm học (pin model, kiểm license và chi phí CPU) với `threshold`, `prefix_padding_ms`, `silence_duration_ms`; phát `speech_started/stopped` và auto-commit. Không dùng CTC blank làm VAD. `semantic_vad` vẫn từ chối.
+- [ ] Tùy chọn: partial trước commit bằng decoder stable-prefix, có chính sách sửa final rõ ràng. Ứng viên: streaming mode của VieGem-ASR (FLEURS WER 9.02 so với 7.33 full context), cần gate riêng.
 
-### 4. Scale and performance
+### 4. Scale và hiệu năng
 
-- [ ] Multiple GPUs: one container per GPU behind a load balancer with sticky WebSocket routing.
-- [ ] REST micro-batching of chunks from different requests. Measured basis: one call with 8 × 8.9 s chunks takes
-  60.5 ms vs ~50 ms for one chunk (≈ 6× throughput headroom on A100); requires parity and per-request deadlines.
-- [ ] Cut per-call launch overhead (~2,440 kernel launches, ~14 ms GPU time out of ~50 ms): CUDA graphs or
-  `torch.compile` with fixed chunk shapes; gate on identical text vs `docs/baseline/offline.json`.
-- [ ] LM gate (#8 shipped KenLM decoding behind `VIEGEM_LM`, off by default, with forced-alignment timestamps):
-  measure fixture WER, p95 decode time per 30 s chunk and RTF, fix thresholds from them, then decide the default.
+- [ ] Nhiều GPU: mỗi GPU một container sau load balancer, sticky WebSocket.
+- [ ] Micro-batching chunk từ nhiều request (8 chunk/call chỉ 60.5 ms so với ~50 ms cho 1 chunk); cần parity và deadline theo request.
+- [ ] Giảm overhead launch: CUDA graphs hoặc `torch.compile` với shape cố định; gate bằng text giống hệt `offline.json`.
+- [ ] Gate LM: đo WER fixture, p95 decode mỗi chunk 30 s, RTF; chốt ngưỡng rồi quyết định mặc định.
 
-### 5. Smaller items
+### 5. Việc nhỏ
 
-- [ ] `conversation.item.created` in Realtime if a real client needs it (currently `conversation.item.added`).
-- [ ] G.711 `audio/pcmu` / `audio/pcma` Realtime input formats.
-- [ ] Browser access: ephemeral client secrets or a token service (today: server-to-server Bearer only).
-- [ ] Optional punctuation / inverse text normalization as a separate, versioned post-processor.
-- [ ] Python 3.11 support (only 3.12 tested).
+- [ ] `conversation.item.created` nếu client thật cần.
+- [ ] Input G.711 `audio/pcmu` / `audio/pcma`.
+- [ ] Truy cập từ trình duyệt: ephemeral client secret hoặc token service.
+- [ ] Hậu xử lý dấu câu / inverse text normalization (riêng, có version).
+- [ ] Hỗ trợ Python 3.11.
 
-## Out of scope
+## Ngoài phạm vi
 
-Not provided by this model; would need other engines behind the gateway:
+Model không cung cấp; cần engine khác:
 
-- Languages other than Vietnamese, language auto-detection, `/v1/audio/translations`.
-- `/v1/audio/speech` (TTS), chat/responses, Realtime conversation, WebRTC/SIP.
-- Diarization (`diarized_json`, `known_speaker_*`), `prompt`/keywords biasing, `include[]=logprobs`.
-- `verbose_json.segments`: the SDK schema requires Whisper-only fields (`avg_logprob`, `no_speech_prob`, `tokens`)
-  that the Model cannot fill with real data.
-- TLS, CORS and per-client rate limiting inside the gateway: provided by the infrastructure in front of it.
+- Ngôn ngữ khác tiếng Việt, auto-detect, `/v1/audio/translations`.
+- `/v1/audio/speech`, chat/responses, Realtime hội thoại, WebRTC/SIP.
+- Diarization, `prompt`/keywords biasing, `include[]=logprobs`.
+- `verbose_json.segments` (cần field chỉ Whisper có).
+- TLS, CORS, rate limit theo client trong gateway.

@@ -1,4 +1,4 @@
-"""OpenAI-compatible models and transcription endpoints (docs/api-contract.vi.md §3–5).
+"""OpenAI-compatible models and transcription endpoints (docs/api/).
 
 POST /v1/audio/transcriptions, one scheduler lane per request:
   pre-check (draining / not ready) -> receive multipart (spool) -> parse_params -> open lane -> decode -> drop spool
@@ -53,7 +53,7 @@ WHISPER_ALIAS = (
     "whisper-1"  # opt-in (VIEGEM_WHISPER_ALIAS); same VieGem-ASR backend, not Whisper output
 )
 MODEL_CREATED = (
-    1792562586  # commit time of the pinned weights revision (docs/api-contract.vi.md §3)
+    1792562586  # commit time of the pinned weights revision (docs/api/README.md, Models)
 )
 MODEL_OWNER = "5CD-AI"
 

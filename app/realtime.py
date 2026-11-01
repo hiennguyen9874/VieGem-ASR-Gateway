@@ -1,4 +1,4 @@
-"""Realtime transcription over WebSocket `/v1/realtime`, explicit commit (R3a; docs/api-contract.vi.md §6).
+"""Realtime transcription over WebSocket `/v1/realtime`, explicit commit (R3a; docs/api/realtime.md).
 
 One session = one accepted WebSocket = one `LIVE` scheduler lane held for the whole session:
   handshake (auth in GatewayMiddleware; query, readiness and capacity here; every refusal is an HTTP response

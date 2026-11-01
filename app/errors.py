@@ -1,4 +1,4 @@
-"""OpenAI error envelope and the gateway's status/code mapping (docs/api-contract.vi.md §7).
+"""OpenAI error envelope and the gateway's status/code mapping (docs/api/errors.md).
 
 `APIError` is raised by any layer (scheduler, engine adapter, endpoints). HTTP handlers render it as a JSON
 envelope; the realtime adapter reuses `type`/`code`/`message`/`param` for its `error` events (their `status` is
@@ -123,7 +123,7 @@ def request_timeout() -> APIError:
     return APIError(503, "server_error", "request_timeout", "Request timed out.")
 
 
-# -- realtime `error` events (docs/api-contract.vi.md §6) ---------------------------------------------------------
+# -- realtime `error` events (docs/api/realtime.md) ---------------------------------------------------------
 
 
 def invalid_event(message: str, param: str | None = None) -> APIError:

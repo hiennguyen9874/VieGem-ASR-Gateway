@@ -1,4 +1,4 @@
-"""Word and cue timestamps from the CTC path of each chunk (docs/api-contract.vi.md §4).
+"""Word and cue timestamps from the CTC path of each chunk (docs/api/transcriptions.md).
 
 Greedy decoding: the argmax path that produced the text is its alignment, no extra GPU work. With the LM
 (`VIEGEM_LM`), the path is the forced alignment of the LM units on the same log-probs (`app.lm`, ADR 0002); either

@@ -1,4 +1,4 @@
-"""The examples in tests/contract/examples/ (docs/api-contract.vi.md) parse with the pinned OpenAI Python SDK.
+"""The examples in tests/contract/examples/ (docs/api/) parse with the pinned OpenAI Python SDK.
 
 HTTP examples go through the real SDK client over a mock transport, so this also pins what the SDK sends
 (path, auth header, multipart field names) and how it parses JSON, text, SSE and errors.

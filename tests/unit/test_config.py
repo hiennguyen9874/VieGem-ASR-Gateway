@@ -75,7 +75,7 @@ def test_api_keys_file(tmp_path):
     {"VIEGEM_API_KEYS": KEY, "VIEGEM_DECODE_TIMEOUT_SECONDS": "-1"},
     {"VIEGEM_API_KEYS": KEY, "VIEGEM_WHISPER_ALIAS": "maybe"},
     {"VIEGEM_API_KEYS": KEY, "VIEGEM_LOG_LEVEL": "TRACE"},
-    {"VIEGEM_API_KEYS": KEY, "VIEGEM_PRECISION": "fp16"},  # overflows in the encoder (docs/baseline.vi.md §8)
+    {"VIEGEM_API_KEYS": KEY, "VIEGEM_PRECISION": "fp16"},  # overflows in the encoder (docs/baseline.md, Precision)
     {"VIEGEM_API_KEYS": KEY, "VIEGEM_PRECISION": "float32"},
     {"VIEGEM_API_KEYS": KEY, "VIEGEM_PRECISION": "bf16", "VIEGEM_DEVICE": "cpu"},  # autocast only on CUDA
     {"VIEGEM_API_KEYS": KEY, "VIEGEM_MAX_CHUNK_SECONDS": "60", "VIEGEM_QUEUE_MAX_BUFFERED_SECONDS": "30"},

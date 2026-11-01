@@ -1,4 +1,4 @@
-"""Serializers for the timed response formats (docs/api-contract.vi.md §4): pure functions over samples.
+"""Serializers for the timed response formats (docs/api/transcriptions.md): pure functions over samples.
 
 Times stay integer 16 kHz samples until here. JSON seconds are rounded to 3 decimals; SRT/VTT use whole
 milliseconds `round(samples / 16)`. Both roundings are monotonic, so ordered times stay ordered.

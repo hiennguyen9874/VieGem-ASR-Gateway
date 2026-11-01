@@ -1,4 +1,4 @@
-"""Wire schemas shared by REST, SSE and realtime adapters (docs/api-contract.vi.md)."""
+"""Wire schemas shared by REST, SSE and realtime adapters (docs/api/)."""
 
 from pydantic import BaseModel
 
