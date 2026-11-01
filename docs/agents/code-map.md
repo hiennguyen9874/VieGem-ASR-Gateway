@@ -9,7 +9,8 @@ viegem_loader.py  load the Model from staged local base + weights-only checkpoin
 viegem/           inference-only upstream model, features and units; CC-BY-NC-SA-4.0 LICENSE + NOTICE
 config.py         typed VIEGEM_* env config, validated at startup; no default API key; VIEGEM_PRECISION (fp32|bf16)
 engine.py         VieGemEngine adapter + EngineWorker, the single thread that runs the model;
-                    ChunkResult = text + greedy CTC path (units, first/last frame) + frames
+                    ChunkResult = text + greedy CTC path (units, first/last frame) + frames;
+                    pure ctc_path (argmax -> path) and force_align (log-probs + units -> path, ADR 0002)
 scheduler.py      bounded fair queue (lanes = requests/sessions, jobs = chunks) feeding the worker
 audio.py          AudioIngress: multipart ingress (body limit before parser, bounded spool), sandboxed FFmpeg
                     `decode`, decoded-audio RAM budget (`hold`, `reserve`)
@@ -50,7 +51,7 @@ subtitles.py        dependency-free SRT/VTT parser, shared by smoke_server.py an
 
 | Path | Needs | Covers |
 |---|---|---|
-| `unit/` | CPU + ffmpeg | manifests/pins, config, app over real Uvicorn with the fake engine, transcription params/joiner/end-to-end API (disconnect, SSE, drain, timed formats), alignment, subtitles, realtime (`test_realtime_units.py` pure, `test_realtime_api.py` real WS), observability, benchmark, capacity hardening |
+| `unit/` | CPU + ffmpeg | manifests/pins, config, app over real Uvicorn with the fake engine, transcription params/joiner/end-to-end API (disconnect, SSE, drain, timed formats), alignment, forced alignment, subtitles, realtime (`test_realtime_units.py` pure, `test_realtime_api.py` real WS), observability, benchmark, capacity hardening |
 | `scheduler/` | CPU | scheduler/worker gate with the fake engine: serialization, bounds, fairness, cancel |
 | `audio/` | CPU + ffmpeg | formats, hostile inputs, decode bounds, multipart limits, temp cleanup |
 | `contract/` | CPU (+ Node for `js/`) | `examples/` parsed by the pinned Python SDK (`test_python_sdk.py`) and JS SDK (`js/contract.test.ts`); `test_server_sdk.py` runs a real server against both SDKs (REST over http, Realtime over wss with a self-signed cert, JS via `js/server.test.ts`) |

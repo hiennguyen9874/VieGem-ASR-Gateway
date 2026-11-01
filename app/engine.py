@@ -16,6 +16,7 @@ import logging
 import queue
 import threading
 import time
+from collections.abc import Sequence
 from pathlib import Path
 from typing import NamedTuple, Protocol
 
@@ -59,6 +60,69 @@ def ctc_path(best: np.ndarray) -> tuple[tuple[int, ...], tuple[int, ...], tuple[
         tuple(starts[keep].tolist()),
         tuple(ends[keep].tolist()),
     )
+
+
+def force_align(
+    log_probs: np.ndarray, units: Sequence[int]
+) -> tuple[tuple[int, ...], tuple[int, ...], tuple[int, ...]]:
+    """Best CTC path (Viterbi) of `log_probs` (T, V) that spells `units`, in the shape of `ctc_path`.
+
+    Gives LM units the frames of the same inference (ADR 0002). Forcing the greedy units preserves their sequence,
+    with monotonic, in-range frames; tied best paths may have different timestamps from the greedy path.
+    Unnormalised logits give the same path as their log-softmax (the per-frame normaliser is shared by every path).
+    -inf entries (pruned candidates) are allowed. Raises `ValueError`
+    on malformed input or when no finite path exists (too many units for T, or only through -inf entries).
+    """
+    lp = np.asarray(log_probs, dtype=np.float64)
+    if lp.ndim != 2 or np.isnan(lp).any() or np.isposinf(lp).any():
+        raise ValueError("log_probs must be a 2-D (frames, vocab) array without NaN or +inf")
+    frames, vocab = lp.shape
+    if vocab == 0:
+        raise ValueError("log_probs vocabulary must include the blank column")
+    if not all(isinstance(u, int | np.integer) and not isinstance(u, bool) for u in units):
+        raise ValueError("units must be integers")
+    if any(not BLANK < u < vocab for u in units):
+        raise ValueError(f"units must be non-blank ids below {vocab}")
+    n = len(units)
+    if n == 0 and frames == 0:
+        return (), (), ()
+    if frames == 0:
+        raise ValueError("no CTC path: no frames")
+
+    # Extended states: blank, u1, blank, u2, ..., blank. State s comes from s (stay), s-1, or s-2 (skip a blank
+    # between two different units).
+    ext = np.full(2 * n + 1, BLANK, dtype=np.int64)
+    ext[1::2] = units
+    states = len(ext)
+    emit = lp[:, ext]
+    can_skip = np.zeros(states, dtype=bool)
+    can_skip[2:] = (ext[2:] != BLANK) & (ext[2:] != ext[:-2])
+    score = np.full(states, -np.inf)
+    score[: min(2, states)] = emit[0, : min(2, states)]
+    back = np.zeros((frames, states), dtype=np.int8)  # 0 stay, 1 step, 2 skip
+    cand = np.full((3, states), -np.inf)
+    for t in range(1, frames):
+        cand[0] = score
+        cand[1, 1:] = score[:-1]
+        cand[2, 2:] = np.where(can_skip[2:], score[:-2], -np.inf)
+        back[t] = cand.argmax(0)  # ties prefer stay, then step
+        score = cand[back[t], np.arange(states)] + emit[t]
+
+    end = states - 1 if n == 0 or score[-1] >= score[-2] else states - 2
+    if not np.isfinite(score[end]):
+        raise ValueError(f"no CTC path: {n} units do not fit {frames} frames with finite log-probs")
+    path = np.empty(frames, dtype=np.int64)
+    for t in range(frames - 1, -1, -1):
+        path[t] = end
+        end -= int(back[t, end])
+
+    # Each unit state is visited in one contiguous run, in order.
+    on_unit = np.flatnonzero(path % 2 == 1)
+    idx = path[on_unit] // 2
+    order = np.arange(n)
+    first = on_unit[np.searchsorted(idx, order, side="left")]
+    last = on_unit[np.searchsorted(idx, order, side="right") - 1]
+    return tuple(int(u) for u in units), tuple(first.tolist()), tuple(last.tolist())
 
 
 class Engine(Protocol):
