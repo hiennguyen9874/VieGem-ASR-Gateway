@@ -46,11 +46,11 @@ FLEURS vi_vn không có speaker id: `vi_a`/`vi_b` chắc chắn khác nội dung
 ## 4. Số đo (A100-PCIE-40GB, cu126, offline)
 
 Greedy, không LM, chunk 30 s (`app/chunking.split`, splitter của gateway), autocast bf16. Median 5 lần sau warm-up. Report: [`baseline/offline.json`](baseline/offline.json)
-(text ở đây là chuẩn so sánh cho smoke và GPU tests).
+(SHA256 của text UTF-8 là chuẩn so sánh byte-exact cho smoke và GPU tests; không lưu transcript).
 
 | Chỉ số | Giá trị |
 |---|---|
-| Cold load (file trong page cache → model trên GPU) | 5.4 s |
+| Cold load (file trong page cache → model trên GPU) | 5.3 s |
 | Inference đầu tiên (8.88 s audio) | 1.0 s |
 | Peak CPU RSS / RSS sau load | 4,019 MB / 1,191 MB |
 | GPU sau load: allocated / reserved | 1,373 / 1,396 MB |
@@ -58,15 +58,16 @@ Greedy, không LM, chunk 30 s (`app/chunking.split`, splitter của gateway), au
 
 | Fixture | Audio | Full: median | Full: WER | Streaming mask: median | Streaming mask: WER |
 |---|---:|---:|---:|---:|---:|
-| `vi_a.wav` | 8.88 s | 55 ms | 0.0% | 54 ms | 0.0% |
-| `vi_b.wav` | 8.46 s | 54 ms | 4.0% | 54 ms | 8.0% |
-| `vi_long.wav` | 106.62 s | 80 ms | 7.4% | 68 ms | 6.6% |
-| `silence_2s.wav` | 2.00 s | 52 ms → `"vaccine"` | — | 52 ms → `"vaccine"` | — |
-| `short_200ms.wav` | 0.20 s | 52 ms → `""` | — | 54 ms → `""` | — |
+| `vi_a.wav` | 8.88 s | 53 ms | 0.0% | 60 ms | 0.0% |
+| `vi_b.wav` | 8.46 s | 53 ms | 4.0% | 53 ms | 8.0% |
+| `vi_long.wav` | 106.62 s | 69 ms | 7.4% | 64 ms | 6.6% |
+| `silence_2s.wav` | 2.00 s | 53 ms → `""` | — | 54 ms → `""` | — |
+| `short_200ms.wav` | 0.20 s | 51 ms → `""` | — | 51 ms → `""` | — |
 
 WER thô so với transcript FLEURS, chỉ để phát hiện model hỏng. Output tất định qua các lần lặp; batch hai clip cho
 text giống chạy riêng. Có sàn ~50 ms mỗi lời gọi, chi phối với utterance ngắn. Gateway chỉ dùng chế độ full-context.
-Report ghi 2 failure: `silence_2s.wav` không ra `""` (§5).
+Report ghi 1 failure: WER tổng cao hơn baseline QUAN (bảng dưới). Script kiểm tra ngưỡng 17/329 và trả exit 1;
+không nới ngưỡng để che regression. Silence số 0 đã qua policy ở §5.
 
 **So với baseline QUAN-Transcribe-1.0 đã ghi** (commit `178c1ec`, cùng máy; QUAN cắt `vi_long` bằng `split_quiet`
 của reference). Lỗi từ / số từ tham chiếu, full context:
@@ -79,9 +80,10 @@ của reference). Lỗi từ / số từ tham chiếu, full context:
 | Tổng | 329 | 21 (6.4%) | 17 (5.2%) |
 
 Trên 329 từ fixture, VieGem-ASR **kém hơn** baseline QUAN (6.4% so với 5.2%); lỗi chủ yếu ở tên riêng (`byzantine`,
-`bhajan`, `lakkha singh`). Không phải do splitter: cắt `vi_long` theo từng câu cho 6.3%, cả file một lần 7.0%,
-fp32 7.0%. Model card (8 test set, cùng normalizer) cho FLEURS 7.33 so với 7.88 của QUAN; fixture ở đây quá nhỏ để
-kết luận ngược lại, nhưng tiêu chí "không kém QUAN trên fixture" của #4 **chưa đạt**.
+`bhajan`, `lakkha singh`). Đo trước đó: cắt `vi_long` theo từng câu cho 6.3%, cả file một lần 7.0%.
+Đo precision với splitter hiện tại cho fp32 20/329 lỗi (6.08%), vẫn chưa đạt (§8).
+Model card (8 test set, cùng normalizer) cho FLEURS 7.33 so với 7.88 của QUAN; không dùng số model card để thay
+ngưỡng fixture. Bộ dev lớn hơn ủng hộ VieGem (§8), nhưng tiêu chí "không kém QUAN trên fixture" của #4 **chưa đạt**.
 
 **Nguồn gốc sàn ~50 ms** (đo với QUAN tại `8cffbe7`, cùng encoder; chưa profile lại với VieGem-ASR, bảng trên cho
 cùng sàn). Mỗi lời gọi bị giới hạn bởi kernel launch, không bởi compute GPU:
@@ -113,7 +115,7 @@ Policy của gateway: không bao giờ forward waveform < 161 mẫu; audio ≤ 1
 Silence dài vẫn qua model (không dùng ngưỡng biên độ). Splitter giữ cả phần đuôi ngắn (khác `split_quiet` của
 reference, vốn bỏ đuôi ≤ 100 ms).
 
-**Silence → từ sai (VieGem-ASR, chưa xử lý).** Một chunk toàn số 0 hoặc gần 0 dài từ ~1 s cho đúng một unit ở frame
+**Silence → từ sai của model thô (VieGem-ASR).** Một chunk toàn số 0 hoặc gần 0 dài từ ~1 s cho đúng một unit ở frame
 cuối, logits trùng code reference (không phải lỗi gateway); fp32 cho cùng kết quả:
 
 | Chunk (16 kHz) | Text |
@@ -124,9 +126,13 @@ cuối, logits trùng code reference (không phải lỗi gateway); fp32 cho cù
 | 2 s nhiễu Gauss σ = 1e-4 hoặc 1e-3 | `""` |
 | Lời nói + tới 2 s số 0 ở đầu hoặc cuối; `vi_a` + 1 s số 0 + `vi_b` | không có từ thừa |
 
-Hệ quả: REST/SSE/`srt`/`vtt` và Realtime trả một từ sai cho upload hoặc turn toàn im lặng số, và cho chunk 30 s
-toàn im lặng giữa file dài. Gate GPU hiện fail ở 3 assert silence (`tests/gpu/test_audio_pipeline.py`,
-`test_server.py`, `test_realtime.py`); cần quyết định policy trước khi phát hành.
+Policy gateway: sau inference, nếu **mọi mẫu của chunk bằng 0**, trả text/đường CTC rỗng, giữ số frame đã đo.
+Vẫn chạy model để warm-up/recovery thực sự reserve peak VRAM. Không dùng ngưỡng RMS/biên độ; audio khác 0, kể cả
+rất nhỏ, vẫn giữ greedy path nguyên bản. Vì vậy near-zero noise vẫn có thể cho từ sai; chưa có policy lọc nó.
+
+Kiểm chứng lại A100/cu126: GPU tier **13 passed**, gồm silence qua REST/SSE/timed formats, turn im lặng 31 s qua
+nhiều chunk rồi lời nói trên cùng session, và nonzero audio rất nhỏ vẫn khớp greedy decode. Server smoke không
+còn failure; alignment probe có 26 chunk, không lỗi invariant. WER fixture vẫn chặn phát hành theo #4.
 
 ## 6. Tái tạo
 
@@ -144,9 +150,68 @@ CUDA_VISIBLE_DEVICES=<gpu> HF_HOME=$(mktemp -d) uv run --extra cu126 --offline s
 
 | File | Nội dung |
 |---|---|
-| `offline.json` | Baseline inference ở trên (chuẩn text cho smoke/GPU tests) |
-| `server.json` | Smoke gateway local trên GPU: mọi format + Realtime (1 failure: Realtime silence, §5) |
+| `offline.json` | Baseline inference: hash transcript, WER, timing; 1 failure ở ngưỡng WER |
+| `server.json` | Smoke gateway local trên GPU: mọi format + Realtime, 0 failure; chỉ hash/metadata |
 | `server-container-cu128.json` | Smoke trong GPU container gate (chỉ metadata; còn của QUAN, chạy lại ở #5) |
 | `alignment_probe.json` | Hình học frame CTC và độ trễ spike, căn cứ cho timestamps `srt`/`vtt` |
+| `precision-{bf16,fp16,fp32}.json` | Fixture WER, thời gian/RTF, peak VRAM; fp16 ghi lỗi overflow |
+| `fleurs-dev-{bf16,fp32,quan}.json` | Cùng 361 recording vi_vn/dev: hash audio/text, lỗi từ và timing |
+| `fleurs_comparison.json` | Tổng hợp dev và paired bootstrap theo sentence id |
+| `silence_probe.json` | 37 case số 0, noise và lời nói nhỏ; không thêm bộ lọc |
 
 Chưa đo: LM/KenLM, Python 3.11, cold load khi page cache lạnh, tải đồng thời (xem [roadmap.md](roadmap.md)).
+
+## 8. Precision, dev set lớn hơn và near-zero (A100/cu126)
+
+### Precision (#6, đo trước khi #4 đạt)
+
+Cùng staged weights, greedy, splitter 30 s và padded-batch budget của offline baseline; bf16/fp16 là autocast,
+fp32 tắt autocast (không lượng tử hoá lại checkpoint). Median 5 lần sau warm-up. Peak VRAM tính cả workload
+full-context/streaming của script, không phải capacity mỗi request của server.
+
+| Precision | Lỗi / 329 từ | WER | Median vi_a / vi_long | RTF vi_a / vi_long | Peak allocated / reserved |
+|---|---:|---:|---:|---:|---:|
+| bf16 | 21 | 6.38% | 52.1 / 63.8 ms | 0.00586 / 0.00060 | 2196 / 2722 MiB |
+| fp16 | không đo được | — | lỗi ở inference đầu | — | 1432 / 1466 MiB tới lúc lỗi |
+| fp32 | 20 | 6.08% | 46.5 / 168.7 ms | 0.00523 / 0.00158 | 2126 / 2650 MiB |
+
+Fp16 fail với `RuntimeError`: không biểu diễn được giá trị bằng Half (overflow), không coi WER là 0.
+Theo rule của #1/#6, **fp32 là ứng viên** vì giảm 0.304 điểm phần trăm WER fixture (> 0.1).
+Tuy nhiên 20 lỗi vẫn vượt giới hạn QUAN 17 lỗi; cả bf16 và fp32 trả exit 1 ở gate.
+**Chưa đổi engine mặc định bf16**, chưa đóng #4/#6 hay phát hành precision mới khi gate còn fail.
+Fp32 nhanh hơn với clip ngắn ở lần đo này nhưng chậm hơn đáng kể với file dài; không kết luận một precision
+luôn nhanh hơn từ máy dùng chung này.
+
+### FLEURS vi_vn/dev: 361 recording, 10,373 từ
+
+Revision dataset giữ nguyên như fixture, `70bb2e84b976b7e960aa89f1c648e09c59f894dd`.
+Cùng file, cùng splitter, greedy full-context, whitespace WER trên cột normalized transcription, không thêm
+normalizer. QUAN dùng checkpoint/hash và reference code đã pin của baseline lịch sử; chỉ dùng để so sánh offline,
+không khôi phục loader hay model selection trong gateway.
+
+| Mẫu | VieGem bf16 | VieGem fp32 | QUAN bf16 |
+|---|---:|---:|---:|
+| Toàn dev: 10,373 từ | 987 lỗi (9.52%) | 986 lỗi (9.51%) | 1053 lỗi (10.15%) |
+| Bỏ 12 file nguồn fixture: 349 recording, 10,044 từ | 967 lỗi (9.63%) | 967 lỗi (9.63%) | 1038 lỗi (10.33%) |
+
+Trên 349 recording còn lại, chênh lệch VieGem − QUAN là **−0.707 điểm phần trăm**.
+Paired bootstrap 10,000 lần, seed 42, gom theo 149 sentence id (không coi các bản đọc cùng câu là độc lập),
+cho CI95 bf16 **[−1.185, −0.225]**, fp32 **[−1.194, −0.227]** điểm phần trăm.
+Các recording còn lại vẫn có thể cùng sentence id với fixture; đây không phải tập tách biệt theo nội dung.
+Đây là bằng chứng thăm dò trên **dev**, không phải test split hay số đo tương đương model card
+(split/normalizer khác); không thay thế điều kiện 329 từ của #4.
+Timing dev là một lượt, không phải benchmark latency lặp lại. Đo chưa có KenLM.
+
+### Near-zero: chưa đủ cơ sở bật ngưỡng RMS
+
+`scripts/probe_silence.py`: 37 case float32 16 kHz, seed 42; số 0 từ 100 ms tới 30 s, hằng số và Gauss
+biên độ 1e-7..1e-3 ở 2/30 s, hai fixture lời nói với gain 1..1e-4. Không lượng tử hoá PCM16 hoặc resample.
+Mọi case toàn số 0 cho text rỗng. Noise khác 0 vẫn có thể sinh từ, không đơn điệu theo RMS.
+
+Ví dụ hằng số 2 s RMS 1e-3 sinh một từ, trong khi `vi_b` gain 0.01, RMS 1.37e-4 vẫn giữ WER 4%.
+Một cutoff đủ để loại case noise đó cũng loại lời nói nhận được tốt này.
+Ở gain 0.001, cùng clip RMS 1.37e-5 vẫn sinh 9 từ (WER 72%); không thể mặc định mọi tín hiệu nhỏ là im lặng.
+**Giữ policy chỉ số 0; không thêm RMS gate hay VAD chưa kiểm định.**
+
+Container cu126/cu128 vẫn chưa được kiểm định lại: môi trường đo không có Docker/Toolkit. Các số ở đây không
+thay thế image gate #5; cần chạy trên host có Docker và NVIDIA Container Toolkit.

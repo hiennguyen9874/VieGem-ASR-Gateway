@@ -212,7 +212,8 @@ baseline = json.load(open('/w/docs/baseline/offline.json'))['results']
 def transcribe(name):
     data = open('/w/tests/fixtures/' + name, 'rb').read()
     with gw.transcribe(data) as r:
-        assert json.load(r)['text'] == baseline[name + ':full']['text']
+        from scripts.scoring import text_sha256
+        assert text_sha256(json.load(r)['text']) == baseline[name + ':full']['text_sha256']
 with concurrent.futures.ThreadPoolExecutor(2) as pool:
     list(pool.map(transcribe, ['vi_a.wav', 'vi_b.wav']))
 print('auth/errors/overload/isolation passed')

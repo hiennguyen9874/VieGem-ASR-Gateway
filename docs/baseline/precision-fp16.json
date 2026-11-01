@@ -1,0 +1,59 @@
+{
+  "environment": {
+    "python": "3.12.14",
+    "torch": "2.14.1+cu126",
+    "torch_cuda": "12.6",
+    "transformers": "5.19.0",
+    "cpu_count": 64,
+    "cuda_visible_devices": "2",
+    "gpu": "NVIDIA A100-PCIE-40GB",
+    "gpu_total_mb": 40339,
+    "driver": "535.230.02"
+  },
+  "code_sha256": "7f01e275756b2d0f68a327e7282dc6b0a310e748be1eb4a7c1036d39e42d98e3",
+  "precision": "fp16",
+  "network_blocked": true,
+  "hf_home": null,
+  "revisions": {
+    "models": {
+      "embeddinggemma-2": "914f7f89142e33e77833254d9c9b90c3cef7303b",
+      "viegem-asr": "95eae70b21fb0ef640e3ac4ea8cfa2380872ed20"
+    }
+  },
+  "decoder": {
+    "decoder": "greedy",
+    "use_lm": false,
+    "autocast": "fp16",
+    "splitter": "app.chunking.split",
+    "silence_policy": "empty transcript for all-zero chunks; no amplitude threshold",
+    "chunk_seconds": 30.0,
+    "batch_seconds": 600.0,
+    "left_chunks": null
+  },
+  "load": {
+    "cold_load_s": 5.7,
+    "rss_mb": 1191,
+    "peak_rss_mb": 4020,
+    "gpu": {
+      "allocated_mb": 1373,
+      "reserved_mb": 1396,
+      "peak_allocated_mb": 1373,
+      "peak_reserved_mb": 1396
+    }
+  },
+  "first_inference_s": 0.704,
+  "error": {
+    "stage": "first_inference",
+    "type": "RuntimeError",
+    "fp16_overflow": true
+  },
+  "inference_gpu": {
+    "allocated_mb": 1389,
+    "reserved_mb": 1466,
+    "peak_allocated_mb": 1432,
+    "peak_reserved_mb": 1466
+  },
+  "failures": [
+    "first inference failed"
+  ]
+}

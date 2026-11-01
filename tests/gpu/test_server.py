@@ -18,7 +18,7 @@ import soundfile as sf
 import torch
 
 from app.engine import VieGemEngine
-from scripts.smoke_inference import wer
+from scripts.scoring import text_sha256, wer
 from tests.live_server import parse_cues, serve, SR, wav_file
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -63,7 +63,7 @@ def test_transcripts_match_baseline_in_every_format(srv):
     for name in ("vi_a.wav", "vi_b.wav", "silence_2s.wav", "short_200ms.wav"):
         path = FIXTURES / name
         body = post(srv, path).json()
-        assert body["text"] == baseline[f"{name}:full"]["text"], name
+        assert text_sha256(body["text"]) == baseline[f"{name}:full"]["text_sha256"], name
         assert post(srv, path, response_format="text").text == body["text"]
         deltas, done = stream(srv, path)
         assert "".join(deltas) == done == body["text"]
@@ -74,6 +74,16 @@ def test_transcripts_match_baseline_in_every_format(srv):
             assert " ".join(c[2] for c in timed(srv, path, fmt)) == body["text"], (name, fmt)
     assert stream(srv, FIXTURES / "silence_2s.wav") == ([], "")
     assert timed(srv, FIXTURES / "silence_2s.wav", "srt") == []
+
+
+def test_digital_silence_across_chunks_has_no_text_or_cues(srv, tmp_path):
+    path = wav_file(tmp_path / "silent.wav", np.zeros(31 * SR, np.float32))
+    assert post(srv, path).json()["text"] == ""
+    assert post(srv, path, response_format="text").text == ""
+    assert post(srv, path, response_format="verbose_json").json()["text"] == ""
+    assert stream(srv, path) == ([], "")
+    for fmt in ("srt", "vtt"):
+        assert timed(srv, path, fmt) == []
 
 
 GAP_TOLERANCE_S = 1.5  # alignment probe: cue edges measured within 1.24 s of a zero gap (clip silence)

@@ -1,8 +1,8 @@
 {
-  "base_url": "http://127.0.0.1:18431",
-  "commit": "178c1ec728538f3ffa8c4954315ff7fe95e24607-dirty",
-  "started_unix": 1793525750,
-  "ready_wait_s": 0.005,
+  "base_url": "http://127.0.0.1:40341",
+  "commit": "e4091e8ccb769c7e47cbda605e02b904a668789e-dirty",
+  "started_unix": 1793526780,
+  "ready_wait_s": 0.006,
   "health": {
     "status": "ok"
   },
@@ -11,17 +11,13 @@
   ],
   "results": {
     "vi_a.wav": {
-      "text": "các sản phẩm thủ công có thể được coi là đồ cổ mặc dù tuổi đời của chúng trẻ hơn rất nhiều các sản phẩm tương tự được sản xuất hàng loạt",
       "usage": {
         "type": "duration",
         "seconds": 8.88
       },
-      "text_body": "các sản phẩm thủ công có thể được coi là đồ cổ mặc dù tuổi đời của chúng trẻ hơn rất nhiều các sản phẩm tương tự được sản xuất hàng loạt",
       "text_content_type": "text/plain; charset=utf-8",
       "sse_content_type": "text/event-stream; charset=utf-8",
       "deltas": 1,
-      "sse_joined": "các sản phẩm thủ công có thể được coi là đồ cổ mặc dù tuổi đời của chúng trẻ hơn rất nhiều các sản phẩm tương tự được sản xuất hàng loạt",
-      "sse_done": "các sản phẩm thủ công có thể được coi là đồ cổ mặc dù tuổi đời của chúng trẻ hơn rất nhiều các sản phẩm tương tự được sản xuất hàng loạt",
       "sse_errors": [],
       "cue_content_types": {
         "srt": "text/plain; charset=utf-8",
@@ -32,29 +28,29 @@
         "vtt": 2
       },
       "timings_s": {
-        "json": 0.148,
-        "text": 0.123,
+        "json": 0.155,
+        "text": 0.125,
         "sse_total": 0.125,
-        "sse_first_event": 0.125,
-        "verbose_json": 0.123,
-        "srt_vtt": 0.248
+        "sse_first_event": 0.124,
+        "verbose_json": 0.121,
+        "srt_vtt": 0.242
       },
       "audio_s": 8.88,
-      "baseline": "các sản phẩm thủ công có thể được coi là đồ cổ mặc dù tuổi đời của chúng trẻ hơn rất nhiều các sản phẩm tương tự được sản xuất hàng loạt",
-      "matches_baseline": true
+      "baseline_sha256": "c36b625507e87e9ebd73c08ac0b06849b448bed3adcb6c4598e7a6f6a446a094",
+      "matches_baseline": true,
+      "text_sha256": "c36b625507e87e9ebd73c08ac0b06849b448bed3adcb6c4598e7a6f6a446a094",
+      "text_body_sha256": "c36b625507e87e9ebd73c08ac0b06849b448bed3adcb6c4598e7a6f6a446a094",
+      "sse_joined_sha256": "c36b625507e87e9ebd73c08ac0b06849b448bed3adcb6c4598e7a6f6a446a094",
+      "sse_done_sha256": "c36b625507e87e9ebd73c08ac0b06849b448bed3adcb6c4598e7a6f6a446a094"
     },
     "vi_b.wav": {
-      "text": "nghiên cứu trí tuệ nhân tạo bao gồm tạo ra những cỗ máy tự động hóa các tác dụng đòi hỏi hành vi thông minh",
       "usage": {
         "type": "duration",
         "seconds": 8.46
       },
-      "text_body": "nghiên cứu trí tuệ nhân tạo bao gồm tạo ra những cỗ máy tự động hóa các tác dụng đòi hỏi hành vi thông minh",
       "text_content_type": "text/plain; charset=utf-8",
       "sse_content_type": "text/event-stream; charset=utf-8",
       "deltas": 1,
-      "sse_joined": "nghiên cứu trí tuệ nhân tạo bao gồm tạo ra những cỗ máy tự động hóa các tác dụng đòi hỏi hành vi thông minh",
-      "sse_done": "nghiên cứu trí tuệ nhân tạo bao gồm tạo ra những cỗ máy tự động hóa các tác dụng đòi hỏi hành vi thông minh",
       "sse_errors": [],
       "cue_content_types": {
         "srt": "text/plain; charset=utf-8",
@@ -65,62 +61,29 @@
         "vtt": 2
       },
       "timings_s": {
-        "json": 0.127,
-        "text": 0.123,
+        "json": 0.123,
+        "text": 0.12,
         "sse_total": 0.122,
-        "sse_first_event": 0.121,
-        "verbose_json": 0.123,
-        "srt_vtt": 0.247
+        "sse_first_event": 0.122,
+        "verbose_json": 0.122,
+        "srt_vtt": 0.245
       },
       "audio_s": 8.46,
-      "baseline": "nghiên cứu trí tuệ nhân tạo bao gồm tạo ra những cỗ máy tự động hóa các tác dụng đòi hỏi hành vi thông minh",
-      "matches_baseline": true
+      "baseline_sha256": "58332a01cdf496347d75f9a9798d05cd92e0e85900e8f7d41ab461d862284ede",
+      "matches_baseline": true,
+      "text_sha256": "58332a01cdf496347d75f9a9798d05cd92e0e85900e8f7d41ab461d862284ede",
+      "text_body_sha256": "58332a01cdf496347d75f9a9798d05cd92e0e85900e8f7d41ab461d862284ede",
+      "sse_joined_sha256": "58332a01cdf496347d75f9a9798d05cd92e0e85900e8f7d41ab461d862284ede",
+      "sse_done_sha256": "58332a01cdf496347d75f9a9798d05cd92e0e85900e8f7d41ab461d862284ede"
     },
     "silence_2s.wav": {
-      "text": "vaccine",
       "usage": {
         "type": "duration",
         "seconds": 2.0
       },
-      "text_body": "vaccine",
-      "text_content_type": "text/plain; charset=utf-8",
-      "sse_content_type": "text/event-stream; charset=utf-8",
-      "deltas": 1,
-      "sse_joined": "vaccine",
-      "sse_done": "vaccine",
-      "sse_errors": [],
-      "cue_content_types": {
-        "srt": "text/plain; charset=utf-8",
-        "vtt": "text/plain; charset=utf-8"
-      },
-      "cues": {
-        "srt": 1,
-        "vtt": 1
-      },
-      "timings_s": {
-        "json": 0.174,
-        "text": 0.126,
-        "sse_total": 0.125,
-        "sse_first_event": 0.125,
-        "verbose_json": 0.123,
-        "srt_vtt": 0.243
-      },
-      "audio_s": 2.0,
-      "baseline": "vaccine",
-      "matches_baseline": true
-    },
-    "short_200ms.wav": {
-      "text": "",
-      "usage": {
-        "type": "duration",
-        "seconds": 0.2
-      },
-      "text_body": "",
       "text_content_type": "text/plain; charset=utf-8",
       "sse_content_type": "text/event-stream; charset=utf-8",
       "deltas": 0,
-      "sse_joined": "",
-      "sse_done": "",
       "sse_errors": [],
       "cue_content_types": {
         "srt": "text/plain; charset=utf-8",
@@ -131,29 +94,62 @@
         "vtt": 0
       },
       "timings_s": {
-        "json": 0.126,
-        "text": 0.116,
-        "sse_total": 0.117,
-        "sse_first_event": 0.117,
-        "verbose_json": 0.141,
-        "srt_vtt": 0.25
+        "json": 0.147,
+        "text": 0.119,
+        "sse_total": 0.119,
+        "sse_first_event": 0.119,
+        "verbose_json": 0.12,
+        "srt_vtt": 0.246
+      },
+      "audio_s": 2.0,
+      "baseline_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "matches_baseline": true,
+      "text_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "text_body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "sse_joined_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "sse_done_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "short_200ms.wav": {
+      "usage": {
+        "type": "duration",
+        "seconds": 0.2
+      },
+      "text_content_type": "text/plain; charset=utf-8",
+      "sse_content_type": "text/event-stream; charset=utf-8",
+      "deltas": 0,
+      "sse_errors": [],
+      "cue_content_types": {
+        "srt": "text/plain; charset=utf-8",
+        "vtt": "text/plain; charset=utf-8"
+      },
+      "cues": {
+        "srt": 0,
+        "vtt": 0
+      },
+      "timings_s": {
+        "json": 0.122,
+        "text": 0.115,
+        "sse_total": 0.114,
+        "sse_first_event": 0.114,
+        "verbose_json": 0.114,
+        "srt_vtt": 0.228
       },
       "audio_s": 0.2,
-      "baseline": "",
-      "matches_baseline": true
+      "baseline_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "matches_baseline": true,
+      "text_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "text_body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "sse_joined_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "sse_done_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     },
     "vi_long.wav": {
-      "text": "một số loài động vật như voi và hút cao cổ thường hay là gần xe và chỉ với các dụng cụ bình thường chúng ta cũng sẽ quan sát một cách dễ dàng điện thoại vi tinh nói chung không phải là sự thay thế cho điện thoại di động vì bạn phải ở ngoài trời và có tầm nhìn thông thoáng thẳng đến vệ tinh thì mới sử dụng được sau đó la giữa vai giờ chính khi hát các bài hát he tĩnh bác sĩ mon nghĩ rằng một số bệnh nhân có thể đã bị lâyẹp ở bệnh viện và ít nhất hai người là nhân viên y tế trong bệnh viện tôi không biết bạn có nhận ra hay không nhưng hầu hết hàng hết từ trung mỹ nhập khẩu vào nước này đều được miễn thuế argentina nổi tiếng có một trong những đội bóng polo và cầu thủ giỏi nhất thế giới nếu đến thăm vùng bắc cực hoặc nam cực vào mùa đông bạn sẽ được trải nghiệm đêm vùng cực nghĩa là mặt trời không nhú lên khỏi chân trời lúc đầu trang phục chịu ảnh hưởng nặng nề của nền văn hóa bienti ở phía đông điều lệ cần có sự nhất trí từ tất cả các bang trước khi sửa đổi và các ban xem nhẹ chính quyền trung ương đến mức đại diện ban thường xuyên vắng mặt bản báo cáo mở đầu bằng lời biện hộ cho cục trên luận mở và tạo lập sự đồng thuận của hoa kỳ về chính sách đối với trung đông",
       "usage": {
         "type": "duration",
         "seconds": 106.62
       },
-      "text_body": "một số loài động vật như voi và hút cao cổ thường hay là gần xe và chỉ với các dụng cụ bình thường chúng ta cũng sẽ quan sát một cách dễ dàng điện thoại vi tinh nói chung không phải là sự thay thế cho điện thoại di động vì bạn phải ở ngoài trời và có tầm nhìn thông thoáng thẳng đến vệ tinh thì mới sử dụng được sau đó la giữa vai giờ chính khi hát các bài hát he tĩnh bác sĩ mon nghĩ rằng một số bệnh nhân có thể đã bị lâyẹp ở bệnh viện và ít nhất hai người là nhân viên y tế trong bệnh viện tôi không biết bạn có nhận ra hay không nhưng hầu hết hàng hết từ trung mỹ nhập khẩu vào nước này đều được miễn thuế argentina nổi tiếng có một trong những đội bóng polo và cầu thủ giỏi nhất thế giới nếu đến thăm vùng bắc cực hoặc nam cực vào mùa đông bạn sẽ được trải nghiệm đêm vùng cực nghĩa là mặt trời không nhú lên khỏi chân trời lúc đầu trang phục chịu ảnh hưởng nặng nề của nền văn hóa bienti ở phía đông điều lệ cần có sự nhất trí từ tất cả các bang trước khi sửa đổi và các ban xem nhẹ chính quyền trung ương đến mức đại diện ban thường xuyên vắng mặt bản báo cáo mở đầu bằng lời biện hộ cho cục trên luận mở và tạo lập sự đồng thuận của hoa kỳ về chính sách đối với trung đông",
       "text_content_type": "text/plain; charset=utf-8",
       "sse_content_type": "text/event-stream; charset=utf-8",
       "deltas": 4,
-      "sse_joined": "một số loài động vật như voi và hút cao cổ thường hay là gần xe và chỉ với các dụng cụ bình thường chúng ta cũng sẽ quan sát một cách dễ dàng điện thoại vi tinh nói chung không phải là sự thay thế cho điện thoại di động vì bạn phải ở ngoài trời và có tầm nhìn thông thoáng thẳng đến vệ tinh thì mới sử dụng được sau đó la giữa vai giờ chính khi hát các bài hát he tĩnh bác sĩ mon nghĩ rằng một số bệnh nhân có thể đã bị lâyẹp ở bệnh viện và ít nhất hai người là nhân viên y tế trong bệnh viện tôi không biết bạn có nhận ra hay không nhưng hầu hết hàng hết từ trung mỹ nhập khẩu vào nước này đều được miễn thuế argentina nổi tiếng có một trong những đội bóng polo và cầu thủ giỏi nhất thế giới nếu đến thăm vùng bắc cực hoặc nam cực vào mùa đông bạn sẽ được trải nghiệm đêm vùng cực nghĩa là mặt trời không nhú lên khỏi chân trời lúc đầu trang phục chịu ảnh hưởng nặng nề của nền văn hóa bienti ở phía đông điều lệ cần có sự nhất trí từ tất cả các bang trước khi sửa đổi và các ban xem nhẹ chính quyền trung ương đến mức đại diện ban thường xuyên vắng mặt bản báo cáo mở đầu bằng lời biện hộ cho cục trên luận mở và tạo lập sự đồng thuận của hoa kỳ về chính sách đối với trung đông",
-      "sse_done": "một số loài động vật như voi và hút cao cổ thường hay là gần xe và chỉ với các dụng cụ bình thường chúng ta cũng sẽ quan sát một cách dễ dàng điện thoại vi tinh nói chung không phải là sự thay thế cho điện thoại di động vì bạn phải ở ngoài trời và có tầm nhìn thông thoáng thẳng đến vệ tinh thì mới sử dụng được sau đó la giữa vai giờ chính khi hát các bài hát he tĩnh bác sĩ mon nghĩ rằng một số bệnh nhân có thể đã bị lâyẹp ở bệnh viện và ít nhất hai người là nhân viên y tế trong bệnh viện tôi không biết bạn có nhận ra hay không nhưng hầu hết hàng hết từ trung mỹ nhập khẩu vào nước này đều được miễn thuế argentina nổi tiếng có một trong những đội bóng polo và cầu thủ giỏi nhất thế giới nếu đến thăm vùng bắc cực hoặc nam cực vào mùa đông bạn sẽ được trải nghiệm đêm vùng cực nghĩa là mặt trời không nhú lên khỏi chân trời lúc đầu trang phục chịu ảnh hưởng nặng nề của nền văn hóa bienti ở phía đông điều lệ cần có sự nhất trí từ tất cả các bang trước khi sửa đổi và các ban xem nhẹ chính quyền trung ương đến mức đại diện ban thường xuyên vắng mặt bản báo cáo mở đầu bằng lời biện hộ cho cục trên luận mở và tạo lập sự đồng thuận của hoa kỳ về chính sách đối với trung đông",
       "sse_errors": [],
       "cue_content_types": {
         "srt": "text/plain; charset=utf-8",
@@ -164,73 +160,77 @@
         "vtt": 43
       },
       "timings_s": {
-        "json": 0.341,
-        "text": 0.319,
-        "sse_total": 0.324,
-        "sse_first_event": 0.163,
-        "verbose_json": 0.321,
-        "srt_vtt": 0.656
+        "json": 0.335,
+        "text": 0.324,
+        "sse_total": 0.319,
+        "sse_first_event": 0.161,
+        "verbose_json": 0.318,
+        "srt_vtt": 0.646
       },
       "audio_s": 106.62,
-      "wer": 0.0735
+      "wer": 0.0735,
+      "text_sha256": "a144f5ea41f223ed1b6e271c6964236a85db4f3a7dbbbcd3897f37ef8b7d3bfc",
+      "text_body_sha256": "a144f5ea41f223ed1b6e271c6964236a85db4f3a7dbbbcd3897f37ef8b7d3bfc",
+      "sse_joined_sha256": "a144f5ea41f223ed1b6e271c6964236a85db4f3a7dbbbcd3897f37ef8b7d3bfc",
+      "sse_done_sha256": "a144f5ea41f223ed1b6e271c6964236a85db4f3a7dbbbcd3897f37ef8b7d3bfc"
     }
   },
   "realtime": {
     "vi_a.wav": {
-      "text": "các sản phẩm thủ công có thể được coi là đồ cổ mặc dù tuổi đời của chúng trẻ hơn rất nhiều các sản phẩm tương tự được sản xuất hàng loạt",
       "deltas": 1,
       "audio_s": 8.88,
       "timings_s": {
-        "append_send": 0.049,
-        "commit_to_first_delta": 0.057,
-        "commit_to_completed": 0.057
+        "append_send": 0.05,
+        "commit_to_first_delta": 0.056,
+        "commit_to_completed": 0.056
       },
       "wer": 0.0,
-      "rest_wer": 0.0
+      "rest_wer": 0.0,
+      "text_sha256": "c36b625507e87e9ebd73c08ac0b06849b448bed3adcb6c4598e7a6f6a446a094"
     },
     "vi_b.wav": {
-      "text": "nghiên cứu trí tuệ nhân tạo bao gồm tạo ra những cỗ máy tự động hóa các tác dụng đòi hỏi hành vi thông minh",
       "deltas": 1,
       "audio_s": 8.46,
       "timings_s": {
-        "append_send": 0.046,
-        "commit_to_first_delta": 0.056,
-        "commit_to_completed": 0.056
+        "append_send": 0.047,
+        "commit_to_first_delta": 0.055,
+        "commit_to_completed": 0.055
       },
       "wer": 0.04,
-      "rest_wer": 0.04
+      "rest_wer": 0.04,
+      "text_sha256": "58332a01cdf496347d75f9a9798d05cd92e0e85900e8f7d41ab461d862284ede"
     },
     "silence_2s.wav": {
-      "text": "vaccine",
-      "deltas": 1,
+      "deltas": 0,
       "audio_s": 2.0,
       "timings_s": {
         "append_send": 0.004,
-        "commit_to_first_delta": 0.056,
-        "commit_to_completed": 0.056
-      }
+        "commit_to_first_delta": 0.057,
+        "commit_to_completed": 0.057
+      },
+      "text_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     },
     "short_200ms.wav": {
-      "text": "có",
       "deltas": 1,
       "audio_s": 0.2,
       "timings_s": {
         "append_send": 0.001,
-        "commit_to_first_delta": 0.053,
-        "commit_to_completed": 0.053
-      }
+        "commit_to_first_delta": 0.055,
+        "commit_to_completed": 0.055
+      },
+      "text_sha256": "8e3aafe8f85bcb4a59bc0a0d42e4cf0c262fd898c1cb1ce054d90f170143e18d"
     },
     "vi_long.wav": {
-      "text": "một số loài động vật như voi và hút cao cổ thường hay là gần xe và chỉ với các dụng cụ bình thường chúng ta cũng sẽ quan sát một cách dễ dàng điện thoại vi tinh nói chung không phải là sự thay thế cho điện thoại di động vì bạn phải ở ngoài trời và có tầm nhìn thông thoáng thẳng đến vệ tinh thì mới sử dụng được sau đó la giữa vai giờ chính khi hát các bài hát he tĩnh bác sĩ mon nghĩ rằng một số bệnh nhân có thể đã bị lâyẹp ở bệnh viện và ít nhất hai người là nhân viên y tế trong bệnh viện tôi không biết bạn có nhận ra hay không nhưng hầu hết hàng hết từ trung mỹ nhập khẩu vào nước này đều được miễn thuế argentina nổi tiếng có một trong những đội bóng polo và cầu thủ giỏi nhất thế giới nếu đến thăm vùng bắc cực hoặc nam cực vào mùa đông bạn sẽ được trải nghiệm đêm vùng cực nghĩa là mặt trời không nhú lên khỏi chân trời lúc đầu trang phục chịu ảnh hưởng nặng nề của nền văn hóa bienti ở phía đông điều lệ cần có sự nhất trí từ tất cả các bang trước khi sửa đổi và các ban xem nhẹ chính quyền trung ương đến mức đại diện ban thường xuyên vắng mặt bản báo cáo mở đầu bằng lời biện hộ cho cục trên lượng mở và tạo lập sự đồng thuận của hoa kỳ về chính sách đối với trung đông",
       "deltas": 4,
       "audio_s": 106.62,
       "timings_s": {
-        "append_send": 0.564,
-        "commit_to_first_delta": 0.069,
-        "commit_to_completed": 0.238
+        "append_send": 0.566,
+        "commit_to_first_delta": 0.067,
+        "commit_to_completed": 0.228
       },
       "wer": 0.0772,
-      "rest_wer": 0.0735
+      "rest_wer": 0.0735,
+      "text_sha256": "3b81818484786881baf1cde719d0d498b4e4aec4e349645bfd1f62e0f5a66a96"
     }
   },
   "metrics_excerpt": [
@@ -255,7 +255,7 @@
     "viegem_realtime_commit_to_completed_seconds_bucket{le=\"60.0\"} 5",
     "viegem_realtime_commit_to_completed_seconds_bucket{le=\"120.0\"} 5",
     "viegem_realtime_commit_to_completed_seconds_bucket{le=\"+Inf\"} 5",
-    "viegem_realtime_commit_to_completed_seconds_sum 0.44896888523362577",
+    "viegem_realtime_commit_to_completed_seconds_sum 0.4397523608058691",
     "viegem_realtime_commit_to_completed_seconds_count 5",
     "viegem_realtime_items_total{outcome=\"completed\"} 5.0",
     "viegem_realtime_sessions 0.0",
@@ -267,7 +267,5 @@
     "viegem_transcriptions_total{outcome=\"ok\",response_format=\"verbose_json\",stream=\"false\"} 5.0",
     "viegem_transcriptions_total{outcome=\"ok\",response_format=\"vtt\",stream=\"false\"} 5.0"
   ],
-  "failures": [
-    "realtime silence_2s.wav: expected empty transcript"
-  ]
+  "failures": []
 }

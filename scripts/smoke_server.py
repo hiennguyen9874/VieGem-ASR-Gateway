@@ -33,7 +33,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from scripts.scoring import wer  # noqa: E402
+from scripts.scoring import text_sha256, wer  # noqa: E402
 from scripts.subtitles import parse_cues  # noqa: E402
 
 FIXTURES = ROOT / "tests/fixtures"
@@ -338,8 +338,8 @@ def main() -> int:
         ].startswith("text/event-stream"):
             failures.append(f"{name}: content types")
         if res["audio_s"] <= args.max_chunk_seconds:
-            res["baseline"] = baseline[f"{name}:full"]["text"]
-            res["matches_baseline"] = res["text"] == res["baseline"]
+            res["baseline_sha256"] = baseline[f"{name}:full"]["text_sha256"]
+            res["matches_baseline"] = text_sha256(res["text"]) == res["baseline_sha256"]
             if not res["matches_baseline"]:
                 failures.append(f"{name}: differs from the offline baseline")
         else:
@@ -375,6 +375,13 @@ def main() -> int:
             )
         )
     ]
+    # Comparisons and WER use text in memory; only hashes reach stdout or the saved report.
+    for section in ("results", "realtime"):
+        for res in report[section].values():
+            for field in ("text", "text_body", "sse_joined", "sse_done"):
+                if field in res:
+                    value = res.pop(field)
+                    res[field + "_sha256"] = text_sha256(value) if value is not None else None
     report["failures"] = failures
     out = json.dumps(report, ensure_ascii=False, indent=2)
     if args.out:

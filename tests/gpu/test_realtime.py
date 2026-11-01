@@ -98,6 +98,15 @@ def test_turns_match_rest_on_the_committed_waveform_and_wer(srv, tmp_path):
             assert text == ""
 
 
+def test_silent_long_turn_then_speech_on_same_session(srv, tmp_path):
+    silence = bytes(31 * PCM_RATE * 2)
+    speech = to_pcm24(load("vi_a.wav"))
+    empty, spoken = realtime(srv, [silence, speech])
+    assert empty[0] == [] and empty[1]["transcript"] == ""
+    assert spoken[1]["transcript"] == rest(srv, wav_file(tmp_path / "speech.wav", committed(speech)))
+    assert spoken[1]["transcript"]
+
+
 def test_concurrent_sessions_do_not_mix(srv):
     pcms = {n: to_pcm24(load(n)) for n in ("vi_a.wav", "vi_b.wav")}
     expected = {n: realtime(srv, [p])[0][1]["transcript"] for n, p in pcms.items()}

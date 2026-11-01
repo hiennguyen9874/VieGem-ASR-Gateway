@@ -36,6 +36,7 @@ class ChunkResult(NamedTuple):
 
     `units` is the collapsed path without blanks (<unk> kept, so it matches the path); unit i was emitted on encoder
     frames `first[i]..last[i]` (inclusive, relative to the chunk). `frames` is the number of valid encoder frames.
+    All-zero chunks have empty text/path by policy, retaining the measured frame count.
     """
 
     text: str
@@ -110,6 +111,9 @@ class VieGemEngine:
         # Chunking is the caller's job; the greedy best path is kept for timestamps and the text is decoded from it.
         logits, lens = self.forward(wav)
         frames = int(lens[0])
+        # The model hallucinates on digital zeros. Do not threshold quiet speech; keep warm-up real.
+        if not np.any(wav):
+            return ChunkResult("", (), (), (), frames)
         units, first, last = ctc_path(logits[0, :frames].argmax(-1).cpu().numpy())
         return ChunkResult(
             self._units.decode(self._tokenizer, list(units)), units, first, last, frames

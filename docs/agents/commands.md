@@ -56,4 +56,26 @@ CUDA_VISIBLE_DEVICES=<gpu> HF_HOME=$(mktemp -d) uv run --extra cu126 --offline s
 CUDA_VISIBLE_DEVICES=<gpu> uv run --extra cu126 scripts/probe_alignment.py --out docs/baseline/alignment_probe.json
 ```
 
+Diagnostic precision and silence measurements (do not change serving defaults):
+
+```bash
+# Each precision writes its own report; bf16/fp32 currently exit 1 on fixture WER; fp16 exits 1 on overflow.
+CUDA_VISIBLE_DEVICES=<gpu> uv run --extra cu126 --offline scripts/smoke_inference.py \
+    --precision fp32 --no-network --out docs/baseline/precision-fp32.json   # also bf16, fp16
+CUDA_VISIBLE_DEVICES=<gpu> uv run --extra cu126 --offline scripts/probe_silence.py \
+    --out docs/baseline/silence_probe.json
+
+# Public pinned dev set (~215 MB); only this step downloads data, into gitignored outputs/.
+uv run --extra cu126 hf download google/fleurs data/vi_vn/dev.tsv data/vi_vn/audio/dev.tar.gz \
+    --repo-type dataset --revision 70bb2e84b976b7e960aa89f1c648e09c59f894dd --local-dir outputs/fleurs-dev
+CUDA_VISIBLE_DEVICES=<gpu> uv run --extra cu126 --offline scripts/eval_fleurs.py \
+    --data-dir outputs/fleurs-dev/data/vi_vn --precision bf16 --out docs/baseline/fleurs-dev-bf16.json
+# Repeat with --precision fp32 and a separate output file.
+```
+
+The FLEURS/silence scripts block network, verify staged model hashes and save metadata only.
+The local historical-QUAN harness and paired-bootstrap reproduction are retained in
+`outputs/precision/`; their scope/results are documented in docs/baseline.vi.md §8.
+This is exploratory evidence, not a passed release gate.
+
 Benchmark invocation (R4): docs/roadmap.md §1.

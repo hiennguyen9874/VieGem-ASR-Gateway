@@ -98,8 +98,8 @@ Kết quả:
   một dấu cách; chunk rỗng không sinh dấu cách.
 - Silence/clip ngắn (`app/chunking.py`): audio decode hợp lệ nhưng ≤ 1,600 mẫu ở 16 kHz (≤ 100 ms), kể
   cả 0 mẫu → `text: ""` (`verbose_json` với `duration` thật, `srt` rỗng, `vtt` chỉ header), không gọi model (frontend crash dưới 161 mẫu; xem baseline §5). Silence dài vẫn qua model,
-  không dùng ngưỡng biên độ; một chunk toàn im lặng số (0 hoặc gần 0, từ ~1 s) có thể cho một từ sai thay vì `""`
-  (đặc tính của VieGem-ASR, đã đo: baseline §5).
+  nhưng nếu toàn bộ mẫu của chunk bằng 0, gateway trả text và đường CTC rỗng, không có cue. Không dùng ngưỡng
+  biên độ: audio khác 0 dù rất nhỏ vẫn dùng greedy decode và có thể cho từ sai (baseline §5).
 - Chunking: audio dài hơn `VIEGEM_MAX_CHUNK_SECONDS` (mặc định 30 s) được cắt tại điểm yên lặng nhất trong 5 s cuối
   trước giới hạn; các chunk phủ liền toàn bộ audio (không bỏ silence, không bỏ đuôi), mỗi chunk > 100 ms. Text có
   thể khác một lời gọi `transcribe()` của reference trên cùng file vì điểm cắt khác.

@@ -15,8 +15,8 @@ Giới hạn cần biết:
 - `srt`/`vtt` có thời gian từ đường CTC greedy (start của cue có thể trễ ~1 âm tiết). `verbose_json` không có
   `segments`; word timestamps chưa bật.
 - Realtime: transcript chỉ có sau `input_audio_buffer.commit`; không có partial, không có VAD.
-- Một chunk toàn im lặng số (0 hoặc gần 0, từ ~1 s) có thể cho ra một từ sai (vd. `"vaccine"`): đặc tính của model,
-  gateway chưa lọc ([baseline §5](docs/baseline.vi.md)).
+- Chunk toàn số 0 trả transcript rỗng và không có cue. Audio gần 0 nhưng khác 0 vẫn qua greedy decode, có thể
+  cho từ sai; gateway không dùng ngưỡng biên độ để tránh bỏ lời nói nhỏ ([baseline §5](docs/baseline.vi.md)).
 - Alias `whisper-1` (tắt mặc định, `VIEGEM_WHISPER_ALIAS=true`) chỉ để client cũ chạy được: vẫn là VieGem-ASR.
 - Id cũ `quan-transcribe-1.0` không còn được phục vụ: 404 `model_not_found`.
 

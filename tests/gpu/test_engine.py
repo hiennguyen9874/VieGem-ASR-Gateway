@@ -9,6 +9,7 @@ import os
 import time
 from pathlib import Path
 
+import numpy as np
 import pytest
 import soundfile as sf
 import torch
@@ -16,6 +17,7 @@ import torch
 from app.engine import EngineState, EngineWorker, VieGemEngine
 from app.observability import Metrics
 from app.scheduler import JobKind, Scheduler
+from scripts.scoring import text_sha256
 from tests.fake_engine import config
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -56,8 +58,8 @@ def test_real_engine_serves_concurrent_lanes_with_baseline_text():
             assert await asyncio.to_thread(worker.stop, 30)
 
     a, b_live, b_file = asyncio.run(main())
-    assert a == [baseline["vi_a.wav:full"]["text"]] * 3
-    assert b_live == b_file == [baseline["vi_b.wav:full"]["text"]] * 3
+    assert [text_sha256(t) for t in a] == [baseline["vi_a.wav:full"]["text_sha256"]] * 3
+    assert [text_sha256(t) for t in b_live] == [text_sha256(t) for t in b_file] == [baseline["vi_b.wav:full"]["text_sha256"]] * 3
 
 
 def test_chunk_result_path_is_the_greedy_decode():
@@ -72,10 +74,28 @@ def test_chunk_result_path_is_the_greedy_decode():
     for name in ("vi_a.wav", "vi_b.wav", "silence_2s.wav", "short_200ms.wav"):
         wav = sf.read(ROOT / "tests/fixtures" / name, dtype="float32")[0]
         result = engine.transcribe(wav)
-        assert result.text == baseline[f"{name}:full"]["text"], name
+        assert text_sha256(result.text) == baseline[f"{name}:full"]["text_sha256"], name
         logits, lens = engine.forward(wav)
-        assert list(result.units) == greedy_decode(logits, lens)[0], name
+        if name == "silence_2s.wav":
+            assert result.text == "" and result.units == result.first == result.last == ()
+        else:
+            assert list(result.units) == greedy_decode(logits, lens)[0], name
         assert result.frames == int(lens[0]) == -(-(len(wav) - 160) // 640), name
         assert all(f <= l for f, l in zip(result.first, result.last))
         assert all(l < f for l, f in zip(result.last, result.first[1:]))
         assert not result.last or result.last[-1] < result.frames
+
+    # Exact digital zeros are suppressed, but nonzero low-level audio still uses the greedy path.
+    for wav in [np.zeros(n, np.float32) for n in (1601, 16000, 480000)] + [
+        np.full(32000, 1e-5, np.float32),
+        sf.read(ROOT / "tests/fixtures/vi_a.wav", dtype="float32")[0] * 1e-4,
+    ]:
+        result = engine.transcribe(wav)
+        logits, lens = engine.forward(wav)
+        assert result.frames == int(lens[0])
+        if not np.any(wav):
+            assert result.text == "" and result.units == result.first == result.last == ()
+        else:
+            expected = greedy_decode(logits, lens)[0]
+            assert list(result.units) == expected
+            assert result.text == engine._units.decode(engine._tokenizer, expected)

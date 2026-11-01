@@ -26,7 +26,8 @@ Read the section for each area you touch before editing it. File roles: [code-ma
 - FFmpeg gets fixed argv, the `file` protocol and the demuxer/decoder allowlists; client filenames, paths and URLs
   stay out of its arguments, out of disk paths and out of logs.
 - The frontend crashes below 161 samples at 16 kHz. Audio <= 100 ms (1,600 samples) yields `""` without a model
-  call (docs/baseline.vi.md §5).
+  call (docs/baseline.vi.md §5). After inference, all-zero chunks yield empty text/path with the measured frame
+  count retained. Never use an unmeasured amplitude threshold to suppress nonzero audio.
 - Every resource is budgeted: body limit before the multipart parser, spool bytes, decoded audio in RAM (`hold`,
   realtime pending audio via `reserve`). Exceeding one returns 413/429/503 in the OpenAI envelope.
 

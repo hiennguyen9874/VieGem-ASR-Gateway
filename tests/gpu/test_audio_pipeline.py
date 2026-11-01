@@ -25,7 +25,7 @@ from app.chunking import MIN_AUDIO_SAMPLES, split
 from app.engine import EngineState, EngineWorker, VieGemEngine
 from app.observability import Metrics
 from app.scheduler import JobKind, Scheduler
-from scripts.smoke_inference import wer
+from scripts.scoring import text_sha256, wer
 from tests.fake_engine import config
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -91,7 +91,7 @@ def test_decoded_and_chunked_audio_transcribes_like_the_baseline(tmp_path):
             assert await asyncio.to_thread(worker.stop, 30)
 
     out = asyncio.run(main())
-    assert out["vi_a.wav"] == (baseline["vi_a.wav:full"]["text"], 1)
+    assert (text_sha256(out["vi_a.wav"][0]), out["vi_a.wav"][1]) == (baseline["vi_a.wav:full"]["text_sha256"], 1)
     assert out["silence_2s.wav"] == ("", 1)
     assert out["min_chunk"] == ("", 1)
     assert wer(refs["vi_a.wav"], out["vi_a.mp3"][0]) <= 0.15

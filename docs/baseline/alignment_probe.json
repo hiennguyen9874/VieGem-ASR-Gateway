@@ -122,7 +122,7 @@
     "share_ge_500": 0.1265
   },
   "word_duration_ms": {
-    "n": 328,
+    "n": 327,
     "min": 40.0,
     "p10": 40.0,
     "median": 40.0,
@@ -754,7 +754,7 @@
     "errors": 0
   },
   "e_unk": {
-    "units": 926,
+    "units": 925,
     "unk": 0,
     "share": 0.0
   },

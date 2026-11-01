@@ -1,5 +1,12 @@
 """Dependency-free scoring shared by the inference and server smoke gates."""
 
+import hashlib
+
+
+def text_sha256(text: str) -> str:
+    """Byte-exact transcript comparison without storing recognized speech in evidence."""
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
 
 def wer(ref: str, hyp: str) -> float:
     r, h = ref.split(), hyp.split()

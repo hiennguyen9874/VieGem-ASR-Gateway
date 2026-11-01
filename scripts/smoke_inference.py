@@ -5,7 +5,7 @@
         --out docs/baseline/offline.json
 
 Loads only staged assets (app/viegem_loader.py) after verifying them against assets/manifest.json. Decoding is greedy
-(no LM, bf16 autocast on CUDA, as the model card); long audio is cut by the gateway's splitter (app/chunking.py) and
+(no LM, bf16 autocast on CUDA by default; --precision fp16/fp32 is diagnostic only); long audio uses the gateway splitter and
 the chunks are batched. --no-network sets HF_HUB_OFFLINE and installs an audit hook that fails
 any socket connection or DNS lookup made by this process, so a hidden Hub access is an error, not a silent download.
 Outputs a JSON report; exits non-zero when a gate check fails.
@@ -20,24 +20,29 @@ import statistics
 import subprocess
 import sys
 import time
+from functools import partial
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from scripts.scoring import wer  # noqa: E402
+from app.chunking import split  # noqa: E402
+from scripts.scoring import text_sha256, wer  # noqa: E402
 
 DECODER = {
     "decoder": "greedy",
     "use_lm": False,
     "autocast": "bf16",
     "splitter": "app.chunking.split",
+    "silence_policy": "empty transcript for all-zero chunks; no amplitude threshold",
     "chunk_seconds": 30.0,
     "batch_seconds": 600.0,
     "left_chunks": None,
 }
 # Lengths (samples @16 kHz) probed through the model without the quiet splitter, to find the frontend minimum.
 SHORT_PROBE = [1, 160, 161, 320, 480, 640, 1280, 1600, 1601, 3200, 8000]
+# Recorded QUAN full-context baseline on the pinned FLEURS fixtures (docs/baseline.vi.md §4).
+FIXTURE_MAX_WER = 17 / 329
 
 
 def block_network() -> None:
@@ -108,6 +113,83 @@ def environment(torch) -> dict:
     return env
 
 
+def score_fixtures(results: dict) -> tuple[dict, list[str]]:
+    """Weighted full-context WER; streaming and reference-free clips do not set the swap gate."""
+    scored = [r for name, r in results.items() if name.endswith(":full") and "wer" in r]
+    errors = sum(r["word_errors"] for r in scored)
+    words = sum(r["reference_words"] for r in scored)
+    fixture_wer = errors / max(words, 1)
+    score = {
+        "word_errors": errors,
+        "reference_words": words,
+        "wer": round(fixture_wer, 4),
+        "max_wer": FIXTURE_MAX_WER,
+        "passes": words > 0 and fixture_wer <= FIXTURE_MAX_WER,
+    }
+    failures = []
+    if not words:
+        failures.append("fixture WER: no scored reference words")
+    elif not score["passes"]:
+        failures.append(f"fixture WER {fixture_wer:.4f} > QUAN baseline {FIXTURE_MAX_WER:.4f}")
+    return score, failures
+
+
+def decode_batch(model, tokenizer, units, device, precision, pieces, streaming=False):
+    """One diagnostic padded forward, with the same digital-zero policy as the engine."""
+    import numpy as np
+    import torch
+
+    from app.viegem.model import greedy_decode
+
+    lens = torch.tensor([len(w) for w in pieces], dtype=torch.long)
+    x = torch.zeros(len(pieces), int(lens.max()), dtype=torch.float32)
+    for i, w in enumerate(pieces):
+        x[i, : len(w)] = torch.from_numpy(w)
+    dtype = {"bf16": torch.bfloat16, "fp16": torch.float16, "fp32": torch.float32}[precision]
+    with (
+        torch.no_grad(),
+        torch.autocast(
+            device.type, dtype=dtype, enabled=device.type == "cuda" and precision != "fp32"
+        ),
+    ):
+        logits, out_lens = model(
+            x.to(device), lens.to(device), streaming=streaming, left_chunks=DECODER["left_chunks"]
+        )
+    return [
+        units.decode(tokenizer, u) if np.any(wav) else ""
+        for wav, u in zip(pieces, greedy_decode(logits, out_lens), strict=True)
+    ]
+
+
+def transcribe(wav, run, streaming):
+    """Apply the baseline splitter and padded-batch budget to one recording."""
+    spans = split(wav, int(DECODER["chunk_seconds"] * 16000))
+    pieces = [wav[s.start : s.end] for s in spans]
+    texts, batch = [], []
+    for p in pieces + [None]:
+        if (
+            p is not None
+            and (len(batch) + 1) * max(map(len, batch + [p])) <= DECODER["batch_seconds"] * 16000
+        ):
+            batch.append(p)
+            continue
+        if batch:
+            texts += run(batch, streaming)
+        batch = [p] if p is not None else []
+    return " ".join(t for t in texts if t)
+
+
+def finish(report: dict, failures: list[str], out: Path | None) -> int:
+    report["failures"] = failures
+    if out:
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(json.dumps(report, indent=2, ensure_ascii=False) + "\n")
+        print("wrote", out)
+    for failure in failures:
+        print("FAIL", failure, file=sys.stderr)
+    return 1 if failures else 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
@@ -118,6 +200,12 @@ def main() -> int:
         default=Path(os.environ.get("VIEGEM_MODELS_DIR", ROOT / "models")),
     )
     ap.add_argument("--device", default="cuda")
+    ap.add_argument(
+        "--precision",
+        choices=("bf16", "fp16", "fp32"),
+        default="bf16",
+        help="diagnostic autocast precision; does not change the server",
+    )
     ap.add_argument(
         "--repeats", type=int, default=5, help="warm timing repeats per fixture and mode"
     )
@@ -135,12 +223,10 @@ def main() -> int:
     import soundfile as sf
     import torch
 
-    from app.chunking import split
-    from app.viegem.model import greedy_decode
     from app.viegem_loader import load_viegem
     from scripts.fetch_fixtures import LARGE_DIR
     from scripts.fetch_fixtures import MANIFEST as FIXTURES_MANIFEST
-    from scripts.fetch_fixtures import SMALL_DIR
+    from scripts.fetch_fixtures import sha256, SMALL_DIR
     from scripts.fetch_fixtures import verify as verify_fixtures
     from scripts.stage_models import check as check_assets
     from scripts.stage_models import MANIFEST as ASSET_MANIFEST
@@ -155,14 +241,17 @@ def main() -> int:
         print("\n".join(failures), file=sys.stderr)
         return 1
 
+    on_cuda = torch.device(args.device).type == "cuda"
     report = {
         "environment": environment(torch),
+        "code_sha256": sha256(Path(__file__)),
+        "precision": args.precision,
         "network_blocked": args.no_network,
         "hf_home": os.environ.get("HF_HOME"),
         "revisions": {"models": {k: v["revision"] for k, v in assets["models"].items()}},
-        "decoder": DECODER,
+        "decoder": DECODER
+        | {"autocast": args.precision if on_cuda and args.precision != "fp32" else None},
     }
-    on_cuda = torch.device(args.device).type == "cuda"
     sync = torch.cuda.synchronize if on_cuda else (lambda: None)
 
     t0 = time.perf_counter()
@@ -177,38 +266,7 @@ def main() -> int:
 
     device = torch.device(args.device)
 
-    def run(pieces, streaming=False):
-        """One padded forward over a batch of waveforms -> one greedy text per waveform."""
-        lens = torch.tensor([len(w) for w in pieces], dtype=torch.long)
-        x = torch.zeros(len(pieces), int(lens.max()), dtype=torch.float32)
-        for i, w in enumerate(pieces):
-            x[i, : len(w)] = torch.from_numpy(w)
-        with torch.no_grad(), torch.autocast(device.type, dtype=torch.bfloat16, enabled=on_cuda):
-            logits, out_lens = model(
-                x.to(device),
-                lens.to(device),
-                streaming=streaming,
-                left_chunks=DECODER["left_chunks"],
-            )
-        return [units.decode(tokenizer, u) for u in greedy_decode(logits, out_lens)]
-
-    def transcribe(wav, streaming):
-        """Chunks <= chunk_seconds (<= 100 ms of audio -> no chunk, ""), batched up to batch_seconds of padding."""
-        spans = split(wav, int(DECODER["chunk_seconds"] * 16000))
-        pieces = [wav[s.start : s.end] for s in spans]
-        texts, batch = [], []
-        for p in pieces + [None]:
-            if (
-                p is not None
-                and (len(batch) + 1) * max(map(len, batch + [p]))
-                <= DECODER["batch_seconds"] * 16000
-            ):
-                batch.append(p)
-                continue
-            if batch:
-                texts += run(batch, streaming)
-            batch = [p] if p is not None else []
-        return " ".join(t for t in texts if t)
+    run = partial(decode_batch, model, tokenizer, units, device, args.precision)
 
     wavs = {}
     for name, e in fixtures["files"].items():
@@ -217,8 +275,21 @@ def main() -> int:
         wavs[name] = x
 
     t0 = time.perf_counter()
-    transcribe(wavs["vi_a.wav"], False)
-    sync()
+    try:
+        transcribe(wavs["vi_a.wav"], run, False)
+        sync()
+    except (RuntimeError, ValueError) as exc:
+        # Invalid precisions must still leave metadata evidence, without arbitrary exception text.
+        report["first_inference_s"] = round(time.perf_counter() - t0, 3)
+        report["error"] = {
+            "stage": "first_inference",
+            "type": type(exc).__name__,
+            "fp16_overflow": "value cannot be converted to type c10::Half without overflow"
+            in str(exc),
+        }
+        if on_cuda:
+            report["inference_gpu"] = gpu_mem(torch)
+        return finish(report, ["first inference failed"], args.out)
     report["first_inference_s"] = round(time.perf_counter() - t0, 3)
 
     results = {}
@@ -228,13 +299,13 @@ def main() -> int:
             texts, times = [], []
             for _ in range(args.repeats):
                 t0 = time.perf_counter()
-                texts.append(transcribe(x, streaming))
+                texts.append(transcribe(x, run, streaming))
                 sync()
                 times.append(time.perf_counter() - t0)
             dur = len(x) / 16000
             med = statistics.median(times)
             r = {
-                "text": texts[0],
+                "text_sha256": text_sha256(texts[0]),
                 "deterministic": len(set(texts)) == 1,
                 "audio_s": round(dur, 3),
                 "median_s": round(med, 4),
@@ -242,16 +313,20 @@ def main() -> int:
                 "rtf": round(med / dur, 5),
             }
             if ref:
+                r["reference_words"] = len(ref.split())
+                r["word_errors"] = round(wer(ref, texts[0]) * r["reference_words"])
                 r["wer"] = round(wer(ref, texts[0]), 4)
             results[f"{name}:{'streaming' if streaming else 'full'}"] = r
             print(name, "streaming" if streaming else "full", r, flush=True)
             if not r["deterministic"]:
                 failures.append(f"{name}: non-deterministic output across repeats")
             if ref == "" and texts[0]:
-                failures.append(f"{name}: expected empty transcript, got {texts[0]!r}")
+                failures.append(f"{name}: expected empty transcript")
             if ref and r["wer"] > 0.5:
                 failures.append(f"{name}: WER {r['wer']} looks broken")
     report["results"] = results
+    report["fixture_wer"], wer_failures = score_fixtures(results)
+    failures += wer_failures
     if on_cuda:
         report["inference_gpu"] = gpu_mem(torch)
     report["inference_cpu"] = rss_mb()
@@ -260,9 +335,9 @@ def main() -> int:
     a, b = wavs["vi_a.wav"], wavs["vi_b.wav"]
     batched = run([a, b])
     report["batch_isolation"] = {
-        "equal_to_single": batched
-        == [results["vi_a.wav:full"]["text"], results["vi_b.wav:full"]["text"]],
-        "texts": batched,
+        "equal_to_single": [text_sha256(t) for t in batched]
+        == [results["vi_a.wav:full"]["text_sha256"], results["vi_b.wav:full"]["text_sha256"]],
+        "text_sha256s": [text_sha256(t) for t in batched],
     }
     if not report["batch_isolation"]["equal_to_single"]:
         failures.append("batched [vi_a, vi_b] differs from single-clip results")
@@ -272,22 +347,17 @@ def main() -> int:
     probe = {}
     for n in SHORT_PROBE:
         try:
-            probe[n] = {"text": run([speech[:n]])[0], "error": None}
+            probe[n] = {"text_sha256": text_sha256(run([speech[:n]])[0]), "error": None}
         except Exception as e:
-            probe[n] = {"text": None, "error": f"{type(e).__name__}: {str(e)[:200]}"}
-        probe[n]["transcribe"] = transcribe(speech[:n].copy(), False)
+            probe[n] = {"text_sha256": None, "error": type(e).__name__}
+        probe[n]["transcribe_sha256"] = text_sha256(transcribe(speech[:n].copy(), run, False))
     report["short_probe"] = probe
-    report["empty_input_transcribe"] = repr(transcribe(np.zeros(0, np.float32), False))
+    report["empty_input_transcribe_sha256"] = text_sha256(
+        transcribe(np.zeros(0, np.float32), run, False)
+    )
     print("short_probe", json.dumps(probe, ensure_ascii=False), flush=True)
 
-    report["failures"] = failures
-    if args.out:
-        args.out.parent.mkdir(parents=True, exist_ok=True)
-        args.out.write_text(json.dumps(report, indent=2, ensure_ascii=False) + "\n")
-        print("wrote", args.out)
-    for f in failures:
-        print("FAIL", f, file=sys.stderr)
-    return 1 if failures else 0
+    return finish(report, failures, args.out)
 
 
 if __name__ == "__main__":

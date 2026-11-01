@@ -1,0 +1,90 @@
+{
+  "scope": "FLEURS vi_vn/dev, pinned revision; whitespace WER, not model-card normalization",
+  "all": {
+    "bf16": {
+      "recordings": 361,
+      "reference_words": 10373,
+      "word_errors": 987,
+      "wer": 0.09515087245734118,
+      "audio_s": 4299.54,
+      "inference_s": 19.72177158598788,
+      "rtf": 0.004586949205261
+    },
+    "fp32": {
+      "recordings": 361,
+      "reference_words": 10373,
+      "word_errors": 986,
+      "wer": 0.09505446833124458,
+      "audio_s": 4299.54,
+      "inference_s": 17.277541062794626,
+      "rtf": 0.004018462687356002
+    },
+    "quan": {
+      "recordings": 361,
+      "reference_words": 10373,
+      "word_errors": 1053,
+      "wer": 0.10151354477971657,
+      "audio_s": 4299.54,
+      "inference_s": 20.167954847216606,
+      "rtf": 0.00469072385585821
+    }
+  },
+  "non_fixture": {
+    "bf16": {
+      "recordings": 349,
+      "reference_words": 10044,
+      "word_errors": 967,
+      "wer": 0.09627638391079252,
+      "audio_s": 4178.28,
+      "inference_s": 19.02814592095092,
+      "rtf": 0.0045540619395901955
+    },
+    "fp32": {
+      "recordings": 349,
+      "reference_words": 10044,
+      "word_errors": 967,
+      "wer": 0.09627638391079252,
+      "audio_s": 4178.28,
+      "inference_s": 16.671502481913194,
+      "rtf": 0.003990039557404768
+    },
+    "quan": {
+      "recordings": 349,
+      "reference_words": 10044,
+      "word_errors": 1038,
+      "wer": 0.1033452807646356,
+      "audio_s": 4178.28,
+      "inference_s": 19.449555299710482,
+      "rtf": 0.004654919081466652
+    }
+  },
+  "paired_bootstrap": {
+    "bf16_minus_quan": {
+      "unit": "percentage points",
+      "group": "sentence_id",
+      "groups": 149,
+      "replicates": 10000,
+      "seed": 42,
+      "ci95": [
+        -1.185469117925497,
+        -0.22517504870838673
+      ]
+    },
+    "fp32_minus_quan": {
+      "unit": "percentage points",
+      "group": "sentence_id",
+      "groups": 149,
+      "replicates": 10000,
+      "seed": 42,
+      "ci95": [
+        -1.1938884054564112,
+        -0.22660197146070182
+      ]
+    }
+  },
+  "limitations": [
+    "dev, not test split; not a release gate or replacement for 329-word fixture criterion",
+    "CI is exploratory; no claim about other datasets/domains",
+    "larger evaluation times are one pass, not a repeated latency benchmark"
+  ]
+}

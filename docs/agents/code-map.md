@@ -40,7 +40,9 @@ probe_alignment.py  frame geometry, shift, spike latency -> docs/baseline/alignm
 demo_page.py        listening page: FLEURS clips + synthetic hard/edge cases -> running gateway -> outputs/<dir>/
                       (audio/, results.json, static index.html with WER, word diff, clickable SRT cues)
 eval_alignment.py   R2b gate: words vs hand annotations in tests/fixtures/alignment/ (none exist yet)
-scoring.py          dependency-free WER, shared by both smoke scripts
+eval_fleurs.py      pinned dev split: precision/greedy WER, paired per-recording metadata (not a release gate)
+probe_silence.py    digital-zero/noise/quiet-speech measurements; no amplitude filter
+scoring.py          dependency-free WER and transcript hashes, shared by smoke/evaluation scripts
 subtitles.py        dependency-free SRT/VTT parser, shared by smoke_server.py and tests/live_server.py
 ```
 

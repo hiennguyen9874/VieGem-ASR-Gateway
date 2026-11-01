@@ -1,0 +1,389 @@
+{
+  "environment": {
+    "python": "3.12.14",
+    "torch": "2.14.1+cu126",
+    "torch_cuda": "12.6",
+    "transformers": "5.19.0",
+    "cpu_count": 64,
+    "cuda_visible_devices": "2",
+    "gpu": "NVIDIA A100-PCIE-40GB",
+    "gpu_total_mb": 40339,
+    "driver": "535.230.02"
+  },
+  "precision": "bf16",
+  "rng_seed": 42,
+  "models": {
+    "embeddinggemma-2": "914f7f89142e33e77833254d9c9b90c3cef7303b",
+    "viegem-asr": "95eae70b21fb0ef640e3ac4ea8cfa2380872ed20"
+  },
+  "code_sha256": {
+    "scripts/probe_silence.py": "f3461b2c438b83c07d580c6f2ee6193a9d3f522b2a52ab86fb9fa8e8b05c1b91",
+    "scripts/smoke_inference.py": "7f01e275756b2d0f68a327e7282dc6b0a310e748be1eb4a7c1036d39e42d98e3"
+  },
+  "method": "16kHz mono float32; no PCM16 quantization; no threshold; gateway digital-zero and <=100ms policies",
+  "results": [
+    {
+      "case": "zeros/0.1s",
+      "samples": 1600,
+      "rms": 0.0,
+      "peak": 0.0,
+      "text_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "output_words": 0,
+      "nonempty": false
+    },
+    {
+      "case": "zeros/0.100062s",
+      "samples": 1601,
+      "rms": 0.0,
+      "peak": 0.0,
+      "text_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "output_words": 0,
+      "nonempty": false
+    },
+    {
+      "case": "zeros/0.5s",
+      "samples": 8000,
+      "rms": 0.0,
+      "peak": 0.0,
+      "text_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "output_words": 0,
+      "nonempty": false
+    },
+    {
+      "case": "zeros/1s",
+      "samples": 16000,
+      "rms": 0.0,
+      "peak": 0.0,
+      "text_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "output_words": 0,
+      "nonempty": false
+    },
+    {
+      "case": "zeros/2s",
+      "samples": 32000,
+      "rms": 0.0,
+      "peak": 0.0,
+      "text_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "output_words": 0,
+      "nonempty": false
+    },
+    {
+      "case": "zeros/10s",
+      "samples": 160000,
+      "rms": 0.0,
+      "peak": 0.0,
+      "text_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "output_words": 0,
+      "nonempty": false
+    },
+    {
+      "case": "zeros/30s",
+      "samples": 480000,
+      "rms": 0.0,
+      "peak": 0.0,
+      "text_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "output_words": 0,
+      "nonempty": false
+    },
+    {
+      "case": "constant/2s/1e-07",
+      "samples": 32000,
+      "rms": 1.0000000116860976e-07,
+      "peak": 1.0000000116860974e-07,
+      "text_sha256": "bcc3aa029a10fa3e5ede44b898028d054bfa26b4e591ca25ad47a8daba9b204b",
+      "output_words": 1,
+      "nonempty": true
+    },
+    {
+      "case": "gaussian/2s/1e-07",
+      "samples": 32000,
+      "rms": 1.0037374270383773e-07,
+      "peak": 4.3891145651286934e-07,
+      "text_sha256": "bcc3aa029a10fa3e5ede44b898028d054bfa26b4e591ca25ad47a8daba9b204b",
+      "output_words": 1,
+      "nonempty": true
+    },
+    {
+      "case": "constant/2s/1e-06",
+      "samples": 32000,
+      "rms": 9.999999974752427e-07,
+      "peak": 9.999999974752427e-07,
+      "text_sha256": "bcc3aa029a10fa3e5ede44b898028d054bfa26b4e591ca25ad47a8daba9b204b",
+      "output_words": 1,
+      "nonempty": true
+    },
+    {
+      "case": "gaussian/2s/1e-06",
+      "samples": 32000,
+      "rms": 1.0014869549937881e-06,
+      "peak": 5.00723535878933e-06,
+      "text_sha256": "bcc3aa029a10fa3e5ede44b898028d054bfa26b4e591ca25ad47a8daba9b204b",
+      "output_words": 1,
+      "nonempty": true
+    },
+    {
+      "case": "constant/2s/1e-05",
+      "samples": 32000,
+      "rms": 9.999999747378752e-06,
+      "peak": 9.999999747378752e-06,
+      "text_sha256": "bcc3aa029a10fa3e5ede44b898028d054bfa26b4e591ca25ad47a8daba9b204b",
+      "output_words": 1,
+      "nonempty": true
+    },
+    {
+      "case": "gaussian/2s/1e-05",
+      "samples": 32000,
+      "rms": 1.0044805827119881e-05,
+      "peak": 4.506745972321369e-05,
+      "text_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "output_words": 0,
+      "nonempty": false
+    },
+    {
+      "case": "constant/2s/0.0001",
+      "samples": 32000,
+      "rms": 9.999999747378753e-05,
+      "peak": 9.999999747378752e-05,
+      "text_sha256": "bcc3aa029a10fa3e5ede44b898028d054bfa26b4e591ca25ad47a8daba9b204b",
+      "output_words": 1,
+      "nonempty": true
+    },
+    {
+      "case": "gaussian/2s/0.0001",
+      "samples": 32000,
+      "rms": 0.00010045536319758865,
+      "peak": 0.0004045086388941854,
+      "text_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "output_words": 0,
+      "nonempty": false
+    },
+    {
+      "case": "constant/2s/0.001",
+      "samples": 32000,
+      "rms": 0.0010000000474974513,
+      "peak": 0.0010000000474974513,
+      "text_sha256": "bcc3aa029a10fa3e5ede44b898028d054bfa26b4e591ca25ad47a8daba9b204b",
+      "output_words": 1,
+      "nonempty": true
+    },
+    {
+      "case": "gaussian/2s/0.001",
+      "samples": 32000,
+      "rms": 0.0010035295707267486,
+      "peak": 0.004815640859305859,
+      "text_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "output_words": 0,
+      "nonempty": false
+    },
+    {
+      "case": "constant/30s/1e-07",
+      "samples": 480000,
+      "rms": 1.0000000116860976e-07,
+      "peak": 1.0000000116860974e-07,
+      "text_sha256": "ccd4b8071e72f2ab6eb0788a5b1a1aa874157a18f1ec4a6a154eb503d9d45120",
+      "output_words": 1,
+      "nonempty": true
+    },
+    {
+      "case": "gaussian/30s/1e-07",
+      "samples": 480000,
+      "rms": 9.998106339611532e-08,
+      "peak": 4.993275979359169e-07,
+      "text_sha256": "ccd4b8071e72f2ab6eb0788a5b1a1aa874157a18f1ec4a6a154eb503d9d45120",
+      "output_words": 1,
+      "nonempty": true
+    },
+    {
+      "case": "constant/30s/1e-06",
+      "samples": 480000,
+      "rms": 9.999999974752427e-07,
+      "peak": 9.999999974752427e-07,
+      "text_sha256": "ccd4b8071e72f2ab6eb0788a5b1a1aa874157a18f1ec4a6a154eb503d9d45120",
+      "output_words": 1,
+      "nonempty": true
+    },
+    {
+      "case": "gaussian/30s/1e-06",
+      "samples": 480000,
+      "rms": 9.994324463498293e-07,
+      "peak": 4.827122211281676e-06,
+      "text_sha256": "ccd4b8071e72f2ab6eb0788a5b1a1aa874157a18f1ec4a6a154eb503d9d45120",
+      "output_words": 1,
+      "nonempty": true
+    },
+    {
+      "case": "constant/30s/1e-05",
+      "samples": 480000,
+      "rms": 9.999999747378752e-06,
+      "peak": 9.999999747378752e-06,
+      "text_sha256": "ccd4b8071e72f2ab6eb0788a5b1a1aa874157a18f1ec4a6a154eb503d9d45120",
+      "output_words": 1,
+      "nonempty": true
+    },
+    {
+      "case": "gaussian/30s/1e-05",
+      "samples": 480000,
+      "rms": 9.997982070753359e-06,
+      "peak": 5.0857433961937204e-05,
+      "text_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "output_words": 0,
+      "nonempty": false
+    },
+    {
+      "case": "constant/30s/0.0001",
+      "samples": 480000,
+      "rms": 9.999999747378752e-05,
+      "peak": 9.999999747378752e-05,
+      "text_sha256": "ccd4b8071e72f2ab6eb0788a5b1a1aa874157a18f1ec4a6a154eb503d9d45120",
+      "output_words": 1,
+      "nonempty": true
+    },
+    {
+      "case": "gaussian/30s/0.0001",
+      "samples": 480000,
+      "rms": 9.989551523814159e-05,
+      "peak": 0.0004704156017396599,
+      "text_sha256": "c196ee6d4f93e9185ca5c953d44febf90405e6e275ac5355dc30a3b37c1157c7",
+      "output_words": 1,
+      "nonempty": true
+    },
+    {
+      "case": "constant/30s/0.001",
+      "samples": 480000,
+      "rms": 0.0010000000474974513,
+      "peak": 0.0010000000474974513,
+      "text_sha256": "ccd4b8071e72f2ab6eb0788a5b1a1aa874157a18f1ec4a6a154eb503d9d45120",
+      "output_words": 1,
+      "nonempty": true
+    },
+    {
+      "case": "gaussian/30s/0.001",
+      "samples": 480000,
+      "rms": 0.00100044572636148,
+      "peak": 0.005043589510023594,
+      "text_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "output_words": 0,
+      "nonempty": false
+    },
+    {
+      "case": "vi_a.wav/gain=1",
+      "samples": 142080,
+      "rms": 0.010276769341929885,
+      "peak": 0.10176527500152588,
+      "text_sha256": "c36b625507e87e9ebd73c08ac0b06849b448bed3adcb6c4598e7a6f6a446a094",
+      "output_words": 32,
+      "nonempty": true,
+      "reference_words": 32,
+      "word_errors": 0,
+      "wer": 0.0
+    },
+    {
+      "case": "vi_a.wav/gain=0.1",
+      "samples": 142080,
+      "rms": 0.0010276769518721286,
+      "peak": 0.010176527313888073,
+      "text_sha256": "c36b625507e87e9ebd73c08ac0b06849b448bed3adcb6c4598e7a6f6a446a094",
+      "output_words": 32,
+      "nonempty": true,
+      "reference_words": 32,
+      "word_errors": 0,
+      "wer": 0.0
+    },
+    {
+      "case": "vi_a.wav/gain=0.01",
+      "samples": 142080,
+      "rms": 0.00010276769110543619,
+      "peak": 0.0010176526848226786,
+      "text_sha256": "d4e77d82d3a51af61e0de722008bff0c638b29de3a4de9300a108e42dd56f764",
+      "output_words": 34,
+      "nonempty": true,
+      "reference_words": 32,
+      "word_errors": 2,
+      "wer": 0.0625
+    },
+    {
+      "case": "vi_a.wav/gain=0.001",
+      "samples": 142080,
+      "rms": 1.0276769834231899e-05,
+      "peak": 0.00010176528303418308,
+      "text_sha256": "6e9e755b722df0ffb4bc210376763952b0998cc09f74090306ae5a03a43e48d0",
+      "output_words": 2,
+      "nonempty": true,
+      "reference_words": 32,
+      "word_errors": 32,
+      "wer": 1.0
+    },
+    {
+      "case": "vi_a.wav/gain=0.0001",
+      "samples": 142080,
+      "rms": 1.027676908327854e-06,
+      "peak": 1.0176527212024666e-05,
+      "text_sha256": "ccd4b8071e72f2ab6eb0788a5b1a1aa874157a18f1ec4a6a154eb503d9d45120",
+      "output_words": 1,
+      "nonempty": true,
+      "reference_words": 32,
+      "word_errors": 32,
+      "wer": 1.0
+    },
+    {
+      "case": "vi_b.wav/gain=1",
+      "samples": 135360,
+      "rms": 0.013749969347729719,
+      "peak": 0.13461410999298096,
+      "text_sha256": "58332a01cdf496347d75f9a9798d05cd92e0e85900e8f7d41ab461d862284ede",
+      "output_words": 25,
+      "nonempty": true,
+      "reference_words": 25,
+      "word_errors": 1,
+      "wer": 0.04
+    },
+    {
+      "case": "vi_b.wav/gain=0.1",
+      "samples": 135360,
+      "rms": 0.0013749969583670759,
+      "peak": 0.013461410999298096,
+      "text_sha256": "58332a01cdf496347d75f9a9798d05cd92e0e85900e8f7d41ab461d862284ede",
+      "output_words": 25,
+      "nonempty": true,
+      "reference_words": 25,
+      "word_errors": 1,
+      "wer": 0.04
+    },
+    {
+      "case": "vi_b.wav/gain=0.01",
+      "samples": 135360,
+      "rms": 0.00013749969038608214,
+      "peak": 0.0013461410999298096,
+      "text_sha256": "58332a01cdf496347d75f9a9798d05cd92e0e85900e8f7d41ab461d862284ede",
+      "output_words": 25,
+      "nonempty": true,
+      "reference_words": 25,
+      "word_errors": 1,
+      "wer": 0.04
+    },
+    {
+      "case": "vi_b.wav/gain=0.001",
+      "samples": 135360,
+      "rms": 1.3749969997153385e-05,
+      "peak": 0.00013461412163451314,
+      "text_sha256": "38b8e767fd517a5d762f2c16e9482fb4aaad9f8f11f4c4113ec8ae3b4e796661",
+      "output_words": 9,
+      "nonempty": true,
+      "reference_words": 25,
+      "word_errors": 18,
+      "wer": 0.72
+    },
+    {
+      "case": "vi_b.wav/gain=0.0001",
+      "samples": 135360,
+      "rms": 1.3749968993465257e-06,
+      "peak": 1.3461411072057672e-05,
+      "text_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "output_words": 0,
+      "nonempty": false,
+      "reference_words": 25,
+      "word_errors": 25,
+      "wer": 1.0
+    }
+  ]
+}
