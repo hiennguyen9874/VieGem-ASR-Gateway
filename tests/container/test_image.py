@@ -2,7 +2,7 @@
 start to /ready with the models mounted read-only, smoke against the baseline, graceful SIGTERM, restart.
 
 Needs Docker; the runtime checks also need the NVIDIA Container Toolkit, a free GPU and staged models:
-    QUAN_GPU=<free gpu id> uv run --extra cu128 pytest tests/container --container-cuda=cu128
+    VIEGEM_GPU=<free gpu id> uv run --extra cu128 pytest tests/container --container-cuda=cu128
 The gateway runs with `--network none`; requests come from a sidecar container sharing its network namespace, with
 this repository mounted read-only (scripts/smoke_server.py + fixtures). The smoke report is written to
 docs/baseline/server-container[-cu128].json (metadata only).
@@ -26,8 +26,8 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
-MODELS = Path(os.environ.get("QUAN_MODELS_DIR", ROOT / "models")).resolve()
-IMAGE = "quan-transcribe:test"
+MODELS = Path(os.environ.get("VIEGEM_MODELS_DIR", ROOT / "models")).resolve()
+IMAGE = "viegem-asr-gateway:test"
 KEY = "ctr-" + secrets.token_hex(16)
 pytestmark = [pytest.mark.container,
               pytest.mark.skipif(shutil.which("docker") is None, reason="needs docker")]
@@ -49,7 +49,7 @@ def run_in_image(image: str, script: str) -> str:
 
 
 def test_runs_as_non_root(image):
-    assert run_in_image(image, "id -u").strip() == "10001"
+    assert run_in_image(image, "id -u; id -un; id -gn").splitlines() == ["10001", "viegem", "viegem"]
 
 
 def test_image_contains_only_the_app(image, container_cuda):
@@ -66,16 +66,17 @@ def test_image_contains_only_the_app(image, container_cuda):
 def test_no_secrets_in_image_metadata(image):
     meta = docker("inspect", image).stdout + docker("history", "--no-trunc", image).stdout
     config_env = json.loads(docker("inspect", image).stdout)[0]["Config"]["Env"]
-    assert not any(e.startswith(("HF_TOKEN=", "QUAN_API_KEYS=", "QUAN_API_KEYS_FILE=")) for e in config_env)
-    assert "HF_TOKEN" not in meta and "QUAN_API_KEYS" not in meta
+    assert "VIEGEM_MODELS_DIR=/models" in config_env
+    assert not any(e.startswith(("HF_TOKEN=", "VIEGEM_API_KEYS=", "VIEGEM_API_KEYS_FILE=")) for e in config_env)
+    assert "HF_TOKEN" not in meta and "VIEGEM_API_KEYS" not in meta
     hf_token = os.environ.get("HF_TOKEN")
     assert not hf_token or hf_token not in meta
 
 
 def gpu() -> str:
-    gpu_id = os.environ.get("QUAN_GPU")
+    gpu_id = os.environ.get("VIEGEM_GPU")
     if gpu_id is None:
-        pytest.skip("set QUAN_GPU to a free GPU id for the runtime checks")
+        pytest.skip("set VIEGEM_GPU to a free GPU id for the runtime checks")
     assert (MODELS / "embeddinggemma-2").is_dir(), "models not staged; run scripts/stage_models.py"
     return gpu_id
 
@@ -124,18 +125,18 @@ with urllib.request.urlopen(req, timeout=600) as r:
 def running_container(image, *env, device="cuda"):
     gpu_id = gpu() if device == "cuda" else None
     # Exercise the same file-secret path as compose, without putting the key in container metadata.
-    with tempfile.TemporaryDirectory(prefix="quan-gate-") as tmp:
+    with tempfile.TemporaryDirectory(prefix="viegem-gate-") as tmp:
         key_file = Path(tmp) / "api_keys"
         key_file.write_text(KEY + "\n")
         key_file.chmod(0o444)  # bind mount must be readable by uid 10001
         args = ["run", "-d", "--network", "none", "--read-only",
                 "--tmpfs", "/tmp:size=512m,mode=1777", "--mount", f"type=bind,src={MODELS},dst=/models,readonly",
-                "--mount", f"type=bind,src={key_file},dst=/run/secrets/quan_api_keys,readonly",
-                "-e", "QUAN_API_KEYS_FILE=/run/secrets/quan_api_keys"]
+                "--mount", f"type=bind,src={key_file},dst=/run/secrets/viegem_api_keys,readonly",
+                "-e", "VIEGEM_API_KEYS_FILE=/run/secrets/viegem_api_keys"]
         if gpu_id is not None:
             args += ["--gpus", f"device={gpu_id}"]
         else:
-            args += ["-e", "QUAN_DEVICE=cpu", "-e", "OMP_NUM_THREADS=2", "-e", "MKL_NUM_THREADS=2"]
+            args += ["-e", "VIEGEM_DEVICE=cpu", "-e", "OMP_NUM_THREADS=2", "-e", "MKL_NUM_THREADS=2"]
         for value in env:
             args += ["-e", value]
         cid = docker(*args, image).stdout.strip()
@@ -202,7 +203,7 @@ with connect(url, additional_headers=headers) as a, connect(url, additional_head
 import time
 for _ in range(100):
     metrics = gw.request('GET', '/metrics').read().decode()
-    if 'quan_open_lanes 0' in metrics:
+    if 'viegem_open_lanes 0' in metrics:
         break
     time.sleep(.1)
 else:
@@ -219,7 +220,7 @@ print('auth/errors/overload/isolation passed')
 
 
 def test_errors_overload_and_isolation(image, container_device):
-    with running_container(image, "QUAN_QUEUE_MAX_LANES=2", "QUAN_MAX_SESSIONS=2", device=container_device) as cid:
+    with running_container(image, "VIEGEM_QUEUE_MAX_LANES=2", "VIEGEM_MAX_SESSIONS=2", device=container_device) as cid:
         r = sidecar(cid, image, "-c", ERRORS_AND_ISOLATION)
         assert r.returncode == 0, r.stdout[-4000:] + r.stderr[-4000:]
         assert KEY not in docker("logs", cid).stderr
@@ -227,7 +228,7 @@ def test_errors_overload_and_isolation(image, container_device):
 
 def test_stream_drain_and_restart(image, container_device):
     if not (ROOT / "fixtures-large/vi_long.wav").is_file():
-        if os.environ.get("QUAN_GPU") or container_device == "cpu":
+        if os.environ.get("VIEGEM_GPU") or container_device == "cpu":
             pytest.fail("drain/restart gate needs fixtures-large/vi_long.wav; run scripts/fetch_fixtures.py")
         pytest.skip("drain/restart gate needs fixtures-large/vi_long.wav; run scripts/fetch_fixtures.py")
     with running_container(image, device=container_device) as cid:

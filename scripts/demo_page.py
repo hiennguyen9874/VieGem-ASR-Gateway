@@ -643,7 +643,7 @@ def main() -> int:
         "--add", type=Path, action="append", default=[], help="extra audio file or directory"
     )
     ap.add_argument("--only", help="comma-separated case ids or categories to run")
-    ap.add_argument("--cache", type=Path, default=Path.home() / ".cache" / "quan-deploy-fixtures")
+    ap.add_argument("--cache", type=Path, default=Path.home() / ".cache" / "viegem-deploy-fixtures")
     ap.add_argument("--timeout", type=float, default=600.0, help="per HTTP request")
     ap.add_argument("--ready-timeout", type=float, default=60.0)
     args = ap.parse_args()

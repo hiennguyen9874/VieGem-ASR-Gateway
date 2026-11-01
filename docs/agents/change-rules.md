@@ -8,7 +8,7 @@ Read the section for each area you touch before editing it. File roles: [code-ma
   model at Hub `main`, so its result is unpinned.
 - `EngineWorker` is the single thread that calls QUAN (`QuanCTC._acts` is mutable hook state). Work reaches it as
   jobs (one per chunk) on `Scheduler` lanes (one per request or realtime session).
-- A lane holds at most `QUAN_QUEUE_MAX_JOBS_PER_LANE` (2) queued chunks; long files are fed incrementally. LIVE
+- A lane holds at most `VIEGEM_QUEUE_MAX_JOBS_PER_LANE` (2) queued chunks; long files are fed incrementally. LIVE
   lanes get bounded priority (`live_priority_ratio`).
 - Cancel drops queued chunks and discards the running chunk's result. A running kernel finishes; the worker and
   budgets are released only when the real call returns.
@@ -49,8 +49,9 @@ Read the section for each area you touch before editing it. File roles: [code-ma
 
 ## Config (`config.py`)
 
-- Every `QUAN_*` variable is a server setting, and unknown ones abort startup. `QUAN_GPU`, `QUAN_BUILD_CUDA`
-  (compose) and `QUAN_TEST_*` (JS server test) are therefore kept out of the server's environment.
+- Every `VIEGEM_*` variable is a server setting, and unknown ones abort startup. Legacy `QUAN_*` variables
+  also abort startup. `VIEGEM_GPU`, `VIEGEM_BUILD_CUDA` (compose) and `VIEGEM_TEST_*` (JS server test) are
+  therefore kept out of the server's environment.
 - Each limit is finite and validated at startup. A new setting also gets a row in the README config table.
 
 ## Pins, dependencies, image
@@ -59,7 +60,7 @@ Read the section for each area you touch before editing it. File roles: [code-ma
   code commit in `pyproject.toml` must equal the manifest (`tests/unit/test_manifests.py`).
 - CUDA profiles are mutually exclusive extras with identical model/code pins: cu126 = torch 2.14.1, cu128 = torch
   2.11.0 (the latest published cu128 wheel). Profile selectors: Docker `--build-arg TORCH_CUDA=cu128`, Compose
-  `QUAN_BUILD_CUDA=cu128`, tests `--container-cuda=cu128`.
+  `VIEGEM_BUILD_CUDA=cu128`, tests `--container-cuda=cu128`.
 - The image contains only `app/` and the venv; models are mounted read-only, keys come from a Docker secret.
 - After changing torch, CUDA, the base image or FFmpeg pins: rerun unit + contract tests and the full container
   gate for the target profile with no skips (docs/container-gate.vi.md).

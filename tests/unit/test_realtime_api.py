@@ -34,7 +34,7 @@ def settled(srv) -> None:
     """No session, lane, job or audio reservation left."""
     state = srv.app.state
     wait_for(lambda: state.scheduler._lanes == 0 and state.scheduler._jobs == 0 and state.audio._held == 0)
-    wait_for(lambda: "quan_realtime_sessions 0.0\n" in srv.client.get("/metrics").text)
+    wait_for(lambda: "viegem_realtime_sessions 0.0\n" in srv.client.get("/metrics").text)
 
 
 # -- handshake ----------------------------------------------------------------------------------------------------
@@ -229,8 +229,8 @@ def test_invalid_and_unsupported_events_keep_the_socket(srv):
     ws.send("input_audio_buffer.commit")
     assert ws.turn()[2]["transcript"] == "".join(expected_turn(pcm, CHUNK))
     metrics = srv.client.get("/metrics").text
-    assert 'quan_realtime_client_events_total{type="invalid"} 7.0' in metrics
-    assert 'quan_realtime_client_events_total{type="response.create"} 1.0' in metrics
+    assert 'viegem_realtime_client_events_total{type="invalid"} 7.0' in metrics
+    assert 'viegem_realtime_client_events_total{type="response.create"} 1.0' in metrics
     ws.close()
     settled(srv)
 
@@ -420,7 +420,7 @@ def test_session_expires():
             ws.recv()
         assert e.value.rcvd.code == 1000
         settled(s)
-        assert 'quan_realtime_sessions_total{outcome="session_expired"} 1.0' in s.client.get("/metrics").text
+        assert 'viegem_realtime_sessions_total{outcome="session_expired"} 1.0' in s.client.get("/metrics").text
 
 
 def test_message_over_the_limit_closes_1009(srv):
@@ -476,7 +476,7 @@ def test_client_that_stops_reading_is_dropped():
 
         sender = threading.Thread(target=flood, daemon=True)
         sender.start()
-        metric = 'quan_realtime_sessions_total{outcome="send_timeout"} 1.0'
+        metric = 'viegem_realtime_sessions_total{outcome="send_timeout"} 1.0'
         wait_for(lambda: metric in s.client.get("/metrics").text, timeout=30)
         settled(s)
         sock.shutdown(socket.SHUT_RDWR)

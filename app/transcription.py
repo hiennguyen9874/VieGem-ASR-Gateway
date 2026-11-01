@@ -49,7 +49,7 @@ from app.observability import log, Metrics
 from app.scheduler import JobKind, Lane, Scheduler
 
 MODEL_ID = "quan-transcribe-1.0"
-WHISPER_ALIAS = "whisper-1"  # opt-in (QUAN_WHISPER_ALIAS); same QUAN backend, not Whisper output
+WHISPER_ALIAS = "whisper-1"  # opt-in (VIEGEM_WHISPER_ALIAS); same QUAN backend, not Whisper output
 MODEL_CREATED = (
     1791950390  # commit time of the pinned weights revision (docs/api-contract.vi.md §3)
 )

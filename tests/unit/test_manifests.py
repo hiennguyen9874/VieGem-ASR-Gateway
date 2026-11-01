@@ -1,10 +1,16 @@
 """CPU lane: pins are exact commits and the committed fixtures match their manifest."""
 
 import json
+import os
 import re
+import subprocess
+import sys
 import tomllib
 from pathlib import Path
 
+import yaml
+
+from app.config import Config
 from scripts.fetch_fixtures import MANIFEST as FIXTURES_MANIFEST
 from scripts.fetch_fixtures import verify
 
@@ -51,7 +57,34 @@ def test_docker_cuda_profile_selection():
     assert 'case "$TORCH_CUDA" in cu126|cu128)' in dockerfile
     assert 'uv sync --frozen --no-dev --extra "$TORCH_CUDA"' in dockerfile
     compose = (ROOT / "compose.yaml").read_text()
-    assert 'TORCH_CUDA: "${QUAN_BUILD_CUDA:-cu126}"' in compose
+    assert 'TORCH_CUDA: "${VIEGEM_BUILD_CUDA:-cu126}"' in compose
+
+
+def test_compose_identity_and_server_environment():
+    compose = yaml.safe_load((ROOT / "compose.yaml").read_text())
+    assert list(compose["services"]) == ["viegem"]
+    service = compose["services"]["viegem"]
+    assert service["image"].startswith("viegem-asr-gateway:")
+    assert service["secrets"] == ["viegem_api_keys"]
+    assert compose["secrets"]["viegem_api_keys"]["file"] == "./secrets/viegem_api_keys"
+    env = service["environment"].copy()
+    assert env.pop("VIEGEM_API_KEYS_FILE") == "/run/secrets/viegem_api_keys"
+    env["VIEGEM_API_KEYS"] = "test-key-0123456789"
+    cfg = Config.from_env(env)
+    assert cfg.models_dir == Path("/models") and cfg.device == "cuda"
+
+
+def test_staging_uses_viegem_models_dir_and_dest_override(tmp_path):
+    env = {**os.environ, "VIEGEM_MODELS_DIR": str(tmp_path / "models")}
+    env["QUAN_MODELS_DIR"] = str(tmp_path / "legacy")
+    command = [sys.executable, "scripts/stage_models.py", "--verify", "--only", "quan-transcribe-1.0"]
+    result = subprocess.run(command, cwd=ROOT, env=env, capture_output=True, text=True)
+    assert result.returncode == 1
+    assert str(tmp_path / "models" / "quan-transcribe-1.0") in result.stderr
+    override = tmp_path / "other"
+    result = subprocess.run([*command, "--dest", str(override)], cwd=ROOT, env=env, capture_output=True, text=True)
+    assert result.returncode == 1
+    assert str(override / "quan-transcribe-1.0") in result.stderr
 
 
 def test_small_fixtures_match_manifest():

@@ -9,8 +9,9 @@ Gate phải đạt trước khi phát hành một image: `tests/container/test_i
 | `cu128` | 2.11.0+cu128 | **Đạt trên GPU** (RTX 5090, driver 575.64.03): 6 passed, không skip | [`baseline/server-container-cu128.json`](baseline/server-container-cu128.json) |
 | `cu126` | 2.14.1+cu126 | Chưa chạy GPU gate trong container (host chỉ có RTX 5090, wheel cu126 không có `sm_120`); 6 passed ở chế độ CPU diagnostic | — |
 
-cu126 cần chạy lại GPU gate trên GPU tương thích (ví dụ A100) trước khi phát hành image cu126. Chế độ CPU không
-thay thế GPU gate; report CPU (`server-container-cpu*.json`) không được commit.
+Các kết quả trên là bằng chứng lịch sử cho image trước khi đổi tên gateway; chưa kiểm định image với tên mới.
+Cần chạy lại gate trước khi phát hành. cu126 cần GPU tương thích (ví dụ A100). Chế độ CPU không thay thế GPU gate;
+report CPU (`server-container-cpu*.json`) không được commit.
 
 ## 2. Chạy gate
 
@@ -18,8 +19,8 @@ Cần Docker, NVIDIA Container Toolkit, một GPU trống, model đã stage (`./
 (`scripts/fetch_fixtures.py`, gồm `fixtures-large/vi_long.wav`).
 
 ```bash
-QUAN_GPU=<gpu> uv run --extra cu128 --offline pytest tests/container --container-cuda=cu128 -v
-QUAN_GPU=<gpu> uv run --extra cu126 --offline pytest tests/container -v                    # GPU sm_≤90
+VIEGEM_GPU=<gpu> uv run --extra cu128 --offline pytest tests/container --container-cuda=cu128 -v
+VIEGEM_GPU=<gpu> uv run --extra cu126 --offline pytest tests/container -v                    # GPU sm_≤90
 uv run --extra cu126 --offline pytest tests/container --container-device=cpu -v           # chẩn đoán, không phải gate
 ```
 

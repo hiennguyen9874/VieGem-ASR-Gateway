@@ -392,11 +392,11 @@ def stage(
             for name in sorted({r["kind"] + "_" + r["input"] for r in rows})
         },
         "server": {
-            "queue_wait": histogram(before, after, "quan_queue_wait_seconds"),
-            "decode_wall": histogram(before, after, "quan_decode_seconds"),
-            "infer": histogram(before, after, "quan_infer_seconds"),
+            "queue_wait": histogram(before, after, "viegem_queue_wait_seconds"),
+            "decode_wall": histogram(before, after, "viegem_decode_seconds"),
+            "infer": histogram(before, after, "viegem_infer_seconds"),
             **{
-                n: metric_delta(before, after, "quan_" + n)
+                n: metric_delta(before, after, "viegem_" + n)
                 for n in ("process_cpu_seconds_total", "children_cpu_seconds_total")
             },
             **sampler.report(),

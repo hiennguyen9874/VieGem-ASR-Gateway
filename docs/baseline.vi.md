@@ -77,7 +77,7 @@ kernel launch, không bởi compute GPU:
 | Kernel launch mỗi lời gọi | ~2,440 |
 | Thời gian kernel trên GPU (torch profiler, 8.9 s) | ~14 ms |
 
-Trên gateway, REST còn cộng thêm decode FFmpeg (~69 ms/request trung bình, `quan_decode_seconds`), nên REST
+Trên gateway, REST còn cộng thêm decode FFmpeg (~69 ms/request trung bình; xem report gốc), nên REST
 8.88 s ≈ 125 ms trong khi Realtime commit → completed ≈ 57 ms. Hệ quả cho tải: [roadmap.md](roadmap.md) §1, §4.
 
 ## 5. Giới hạn frontend và clip ngắn

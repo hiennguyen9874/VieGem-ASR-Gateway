@@ -1,6 +1,6 @@
-# Deploy QUAN-Transcribe-1.0
+# VieGem ASR Gateway
 
-Docker-only gateway serving QUAN-Transcribe-1.0 (Vietnamese CTC ASR) through a scoped OpenAI API: REST/SSE (R1),
+Docker-only VieGem gateway currently serving QUAN-Transcribe-1.0 (Vietnamese CTC ASR) through a scoped OpenAI API: REST/SSE (R1),
 verbose_json/srt/vtt (R2a), Realtime with explicit commit (R3a). Pre-release `v0.1.0-rc.1`. TLS, CORS and
 per-client rate limits belong to the operator's infrastructure in front of it.
 

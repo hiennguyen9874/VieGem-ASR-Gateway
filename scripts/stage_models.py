@@ -1,8 +1,8 @@
 """Stage pinned model assets into a local directory and verify them against assets/manifest.json.
 
-    uv run scripts/stage_models.py                    # download pinned revisions, verify SHA256
-    uv run scripts/stage_models.py --verify           # offline: only check files already staged
-    uv run scripts/stage_models.py --update-manifest  # (maintainers) record hashes after changing a pin
+    uv run --extra cu126 scripts/stage_models.py                    # download pinned revisions, verify SHA256
+    uv run --extra cu126 scripts/stage_models.py --verify           # offline: only check files already staged
+    uv run --extra cu126 scripts/stage_models.py --update-manifest  # (maintainers) record hashes after changing a pin
 
 Pins (repo id + commit) live in the manifest. Files are fetched with `revision=<commit>`, never a branch. HF_TOKEN
 is read from the environment by huggingface_hub when a repo needs it; it is never printed or written to disk here.
@@ -17,7 +17,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 MANIFEST = ROOT / "assets" / "manifest.json"
-DEFAULT_DEST = Path(os.environ.get("QUAN_MODELS_DIR", ROOT / "models"))
+DEFAULT_DEST = Path(os.environ.get("VIEGEM_MODELS_DIR", ROOT / "models"))
 
 
 def sha256(path: Path) -> str:
@@ -64,7 +64,7 @@ def main() -> int:
         "--dest",
         type=Path,
         default=DEFAULT_DEST,
-        help="staging root (default $QUAN_MODELS_DIR or ./models)",
+        help="staging root (default $VIEGEM_MODELS_DIR or ./models)",
     )
     ap.add_argument(
         "--verify", action="store_true", help="do not download; only verify staged files"

@@ -5,6 +5,7 @@ Error bodies are also parsed by the pinned OpenAI SDK, the way clients will see 
 
 import asyncio
 import json
+import os
 import threading
 import time
 from contextlib import contextmanager
@@ -136,11 +137,13 @@ def test_metrics_and_logs_carry_no_secrets(capfd):
     with serve(FakeEngine()) as (client, _):
         client.get("/metrics", headers={"Authorization": "Bearer wrong-key-0123456789"})
         text = client.get("/metrics", headers=AUTH).text
-    assert "quan_ready 1.0" in text and 'quan_http_requests_total{status="401"}' in text
+    assert "viegem_ready 1.0" in text and 'viegem_http_requests_total{status="401"}' in text
+    assert all(line.startswith("viegem_") for line in text.splitlines() if line and not line.startswith("#"))
     logs = capfd.readouterr().err
     entries = [json.loads(line) for line in logs.splitlines() if line.startswith("{")]
     requests = [e for e in entries if e["event"] == "http.request"]
     assert requests and all(e["request_id"].startswith("req_") for e in requests)
+    assert entries and all(e["logger"] == "viegem" for e in entries)
     assert {"server.started", "engine.loaded", "server.stopped"} <= {e["event"] for e in entries}
     assert KEY not in logs + text and "wrong-key" not in logs + text
 
@@ -176,13 +179,26 @@ def test_websocket_handshake_refused_without_key(denial_extension):
         assert sent == [{"type": "websocket.close", "code": 1008}]
 
 
+def test_app_factory_reads_new_environment_and_rejects_legacy(monkeypatch):
+    for name in list(os.environ):
+        if name.startswith(("VIEGEM_", "QUAN_")):
+            monkeypatch.delenv(name)
+    monkeypatch.setenv("VIEGEM_API_KEYS", KEY)
+    monkeypatch.setenv("VIEGEM_WHISPER_ALIAS", "true")
+    app = create_app(engine=FakeEngine())
+    assert app.state.config.api_keys == (KEY,) and app.state.config.whisper_alias is True
+    monkeypatch.setenv("QUAN_DEVICE", "cpu")
+    with pytest.raises(ConfigError, match="QUAN_DEVICE"):
+        create_app(engine=FakeEngine())
+
+
 def test_real_engine_requires_staged_models_dir(tmp_path: Path):
     with pytest.raises(ConfigError):
         create_app(config(models_dir=tmp_path / "missing"))
 
 
 def test_startup_requires_spool_dir_and_ffmpeg(tmp_path: Path, monkeypatch):
-    with pytest.raises(ConfigError, match="QUAN_SPOOL_DIR"):
+    with pytest.raises(ConfigError, match="VIEGEM_SPOOL_DIR"):
         create_app(config(spool_dir=tmp_path / "missing"), FakeEngine())
     monkeypatch.setenv("PATH", str(tmp_path))
     with pytest.raises(ConfigError, match="ffmpeg"):
